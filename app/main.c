@@ -134,22 +134,21 @@ int main() {
                                          NULL, 
                                          1, 
                                          &pico_task_handle);
-    /*
+
     BaseType_t gpio_status = xTaskCreate(led_task_gpio, 
                                          "GPIO_LED_TASK", 
                                          128, 
                                          NULL, 
                                          1, 
                                          &gpio_task_handle);
-    */
     
     // Set up the event queue
     queue = xQueueCreate(4, sizeof(uint8_t));
 
     // Start the FreeRTOS scheduler
     // FROM 1.0.1: Only proceed with valid tasks
-    // if (pico_status == pdPASS || gpio_status == pdPASS) {
-    if (pico_status == pdPASS) {
+    if (pico_status == pdPASS || gpio_status == pdPASS) {
+    // if (pico_status == pdPASS) {
         vTaskStartScheduler();
     }
     
