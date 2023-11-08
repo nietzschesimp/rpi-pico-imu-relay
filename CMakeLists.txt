@@ -1,31 +1,5 @@
 cmake_minimum_required(VERSION 3.14)
 
-# Set project data
-set(PROJECT_NAME "RP2040_FREERTOS_PROJECT")
-set(BUILD_NUMBER "1")
-
-# Set app name(s) and version(s)
-set(APP_1_NAME "TEMPLATE")
-set(APP_1_VERSION_NUMBER "1.4.2")
-
-set(APP_2_NAME "SCHEDULING_DEMO")
-set(APP_2_VERSION_NUMBER "1.4.2")
-
-set(APP_3_NAME "IRQS_DEMO")
-set(APP_3_VERSION_NUMBER "1.4.2")
-
-set(APP_4_NAME "TIMERS_DEMO")
-set(APP_4_VERSION_NUMBER "1.4.2")
-
-# Specify the app(s) source code
-set(APP_1_SRC_DIRECTORY "${CMAKE_SOURCE_DIR}/App-Template")
-set(APP_2_SRC_DIRECTORY "${CMAKE_SOURCE_DIR}/App-Scheduling")
-set(APP_3_SRC_DIRECTORY "${CMAKE_SOURCE_DIR}/App-IRQs")
-set(APP_4_SRC_DIRECTORY "${CMAKE_SOURCE_DIR}/App-Timers")
-
-# FROM 1.3.0 -- Move common source code to a separate directory
-set(COMMON_CODE_DIRECTORY "${CMAKE_SOURCE_DIR}/Common")
-
 # FROM 1.4.2 -- Set app-side debugging on debug builds
 # Now uses CMake generator expression to extract config type
 add_compile_definitions($<$<CONFIG:Debug>:DEBUG=1>)
@@ -36,16 +10,16 @@ add_compile_definitions($<$<CONFIG:Debug>:DEBUG=1>)
 set(ENV{PICO_SDK_PATH} "${CMAKE_SOURCE_DIR}/pico-sdk")
 
 # Set flags and directory variables
-set(FREERTOS_CFG_DIRECTORY "${CMAKE_SOURCE_DIR}/Config")
+set(FREERTOS_CFG_DIRECTORY "${CMAKE_SOURCE_DIR}/config")
 set(FREERTOS_SRC_DIRECTORY "${CMAKE_SOURCE_DIR}/FreeRTOS-Kernel")
 
 # Include the Pico SDK
 include(pico_sdk_import.cmake)
 
 # Name the project
-project(${PROJECT_NAME}
+project("RPI_PICO_IMU_RELAY"
         LANGUAGES C CXX ASM
-        DESCRIPTION "FreeRTOS-based RP2040 applications"
+        DESCRIPTION "FreeRTOS-based RP2040 application"
 )
 
 # Initialise the Pico SDK
@@ -71,7 +45,5 @@ target_include_directories(FreeRTOS PUBLIC
 )
 
 # Include the apps' source code
-add_subdirectory(${APP_1_SRC_DIRECTORY})
-add_subdirectory(${APP_2_SRC_DIRECTORY})
-add_subdirectory(${APP_3_SRC_DIRECTORY})
-add_subdirectory(${APP_4_SRC_DIRECTORY})
+add_subdirectory("${CMAKE_SOURCE_DIR}/app")
+
