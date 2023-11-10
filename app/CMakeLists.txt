@@ -5,7 +5,7 @@ set(APP_VERSION "1.0.0")
 set(BUILD_NUM 1)
 add_compile_definitions(APP_NAME="${APP_NAME}")
 add_compile_definitions(APP_VERSION="${APP_VERSION}")
-add_compile_definitions(BUILD_NUM="${BUILD_NUM}")
+add_compile_definitions(BUILD_NUM=${BUILD_NUM})
 
 # Include app source code file(s)
 add_executable(${APP_NAME}
@@ -15,6 +15,7 @@ add_executable(${APP_NAME}
 # Link to built libraries
 target_link_libraries(${APP_NAME} LINK_PUBLIC
     pico_stdlib
+    hardware_i2c
     FreeRTOS)
 
 # Enable/disable STDIO via USB and UART

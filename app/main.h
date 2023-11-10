@@ -21,8 +21,10 @@
 #include <string.h>
 #include <time.h>
 // Pico SDK
+#include "boards/adafruit_feather_rp2040.h"
 #include "pico/stdlib.h"            // Includes `hardware_gpio.h`
 #include "pico/binary_info.h"
+#include "hardware/i2c.h"
 
 
 #ifdef __cplusplus
@@ -33,7 +35,7 @@ extern "C" {
 /**
  * CONSTANTS
  */
-#define         RED_LED_PIN           13
+#define         RED_LED_PIN           20
 
 
 /**
