@@ -86,7 +86,7 @@ void led_task_gpio(void* unused_arg) {
 
 void i2c_port_scan(void* unused_arg) {
 
-    sleep_ms(10000);
+    vTaskDelay(pdMS_TO_TICKS(10000));
 
     // Initialize i2c port
     i2c_init(i2c_default, 100 * 1000);
@@ -125,7 +125,7 @@ void i2c_port_scan(void* unused_arg) {
     printf("Done.\n");
 
     while (true) {
-      sleep_ms(10000);
+      vTaskDelay(pdMS_TO_TICKS(10000));
     }
 }
 
