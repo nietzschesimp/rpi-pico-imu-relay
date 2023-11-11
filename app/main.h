@@ -25,6 +25,8 @@
 #include "pico/stdlib.h"            // Includes `hardware_gpio.h`
 #include "pico/binary_info.h"
 #include "hardware/i2c.h"
+// bno055
+#include "bno055.h"
 
 
 #ifdef __cplusplus
@@ -36,14 +38,17 @@ extern "C" {
  * CONSTANTS
  */
 #define         RED_LED_PIN           20
-
+#define         INPUT_BUFFER_SIZE     256
+#define         I2C_BUFFER_LEN        8
+#define         BNO055_I2C_ADDR       0x28
 
 /**
  * PROTOTYPES
  */
 void led_task_pico(void* unused_arg);
-void led_task_gpio(void* unused_arg);
+void console_task(void* unused_arg);
 void log_debug(const char* msg);
+void log_error(const char* msg);
 void log_device_info(void);
 
 

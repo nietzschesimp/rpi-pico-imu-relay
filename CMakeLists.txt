@@ -44,6 +44,15 @@ target_include_directories(FreeRTOS PUBLIC
     ${FREERTOS_SRC_DIRECTORY}/portable/GCC/ARM_CM0
 )
 
+# Add driver for sensor
+add_library(bno055 STATIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/driver/bno055.c
+)
+
+target_include_directories(bno055 PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/driver
+)
+
 # Include the apps' source code
 add_subdirectory("${CMAKE_SOURCE_DIR}/app")
 
