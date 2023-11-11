@@ -7,8 +7,6 @@
  *
  */
 #include "main.h"
-#include "pico/stdio_usb.h"
-#include "pico/time.h"
 
 
 /*
