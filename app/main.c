@@ -7,6 +7,7 @@
  *
  */
 #include "main.h"
+#include "pico/stdio.h"
 
 
 /*
@@ -25,6 +26,9 @@ int g_inputIdx = 0;
 
 // Sensor struct
 struct bno055_t sensor_handle;
+
+// I2C interface mutex
+static SemaphoreHandle_t i2c_mutex;
 
 
 /*
@@ -85,11 +89,15 @@ void led_task_pico(void* unused_arg) {
 void sensor_task(void* unused_arg) {
 
   struct bno055_accel_t accel_xyz = {0, 0, 0};
+  xSemaphoreTake(i2c_mutex, portMAX_DELAY);
   bno055_set_operation_mode(BNO055_OPERATION_MODE_AMG);
+  xSemaphoreGive(i2c_mutex);
 
   while(true) {
     vTaskDelay(pdMS_TO_TICKS(100));
+    xSemaphoreTake(i2c_mutex, portMAX_DELAY);
     bno055_read_accel_xyz(&accel_xyz);
+    xSemaphoreGive(i2c_mutex);
     printf("Acceleration data:\n");
     printf("Ax: %d\n", accel_xyz.x);
     printf("Ay: %d\n", accel_xyz.y);
@@ -121,6 +129,8 @@ void i2c_port_scan(void* unused_arg) {
     while (true) {
       // Wait until task is notified to do a scan
       ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+      log_debug("Waiting for i2c device to be available!");
+      xSemaphoreTake(i2c_mutex, portMAX_DELAY);
 
       printf("\nI2C Bus Scan\n");
       printf("   0  1  2  3  4  5  6  7  8  9  A  B  C  D  E  F\n");
@@ -144,6 +154,8 @@ void i2c_port_scan(void* unused_arg) {
         printf(addr % 16 == 15 ? "\n" : "  ");
       }
       printf("\nEnd Scan\n");
+
+      xSemaphoreGive(i2c_mutex);
     }
 }
 
@@ -234,9 +246,8 @@ void log_device_info(void) {
  */
 int main() {
 
-    // Initialize the USB interface as stdio
-    stdio_usb_init();
-    while (!stdio_usb_connected()) {}
+    // Initialize stdio
+    stdio_init_all();
 
     // Initialize i2c
     i2c_init(i2c_default, 115200);

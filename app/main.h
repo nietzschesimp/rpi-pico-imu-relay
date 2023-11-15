@@ -14,6 +14,7 @@
 #include <FreeRTOS.h>
 #include <task.h>
 #include <queue.h>
+#include <semphr.h>
 // C
 #include <stdbool.h>
 #include <stdlib.h>
