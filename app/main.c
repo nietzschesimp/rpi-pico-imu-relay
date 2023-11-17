@@ -44,14 +44,20 @@ void input_char_callback(void* param) {
     return;
   }
 
-  // Append data on buffer
-  if ('\r' != in) {
+  if ('\r' == in) {
+    // Tell console task to process line
+    input->buffer_idx %= INPUT_BUFFER_SIZE;
+    input->buffer[input->buffer_idx++] = '\0';
+    xTaskNotifyGive(console_task_handle);
+  }
+  else if ((127 == in) && (input->buffer_idx > 0)) {
+    // If we can delete characters delete one
+    input->buffer[input->buffer_idx--] = '\0';
+  }
+  else {
+    // Append data on buffer
     input->buffer_idx %= INPUT_BUFFER_SIZE;
     input->buffer[input->buffer_idx++] = (char)in;
-  }
-  // Tell console task to process
-  else {
-    xTaskNotifyGive(console_task_handle);
   }
 }
 
@@ -108,7 +114,7 @@ void sensor_task(void* unused_arg) {
  * @brief Read messages from stdin and process the command.
  */
 void console_task(void* unused_arg) {
-  char input_buffer[INPUT_BUFFER_SIZE];
+  char input_buffer[INPUT_BUFFER_SIZE] = {0};
   input_queue_t input = {input_buffer, 0};
 
 
@@ -128,17 +134,14 @@ void console_task(void* unused_arg) {
     }
     printf("]\n");
 
-    if ('\0' == input_buffer[0]) {
-      input.buffer_idx = 0;
-      continue;
-    }
-
-    if(0 == strncmp("scan", input_buffer, input.buffer_idx)) {
+    if(0 == strcmp("scan", input_buffer)) {
       // Notify i2c scan task to run
       xTaskNotifyGive(port_scan_task_handle);
     }
 
-    input_buffer[0] = '\0';
+    for (int ii = 0; ii < input.buffer_idx; ii++) {
+      input_buffer[ii] = '\0';
+    }
     input.buffer_idx = 0;
   }
 }
