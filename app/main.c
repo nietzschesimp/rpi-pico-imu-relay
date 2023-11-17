@@ -305,7 +305,7 @@ int main() {
 
     BaseType_t pico_status = xTaskCreate(led_task_pico, 
                                          "PICO_LED_TASK", 
-                                         1024,
+                                         256,
                                          NULL, 
                                          3,
                                          &pico_task_handle);
@@ -319,7 +319,7 @@ int main() {
 
     BaseType_t scan_status = xTaskCreate(i2c_port_scan,
                                          "I2C_PORT_SCAN",
-                                         1024,
+                                         256,
                                          NULL,
                                          1,
                                          &port_scan_task_handle);
