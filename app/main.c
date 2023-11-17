@@ -20,40 +20,38 @@ TaskHandle_t console_task_handle = NULL;
 TaskHandle_t sensor_task_handle = NULL;
 TaskHandle_t pico_task_handle = NULL;
 
-// Input character buffer
-char g_inputBuffer[INPUT_BUFFER_SIZE];
-int g_inputIdx = 0;
-
 // Sensor struct
 struct bno055_t sensor_handle;
 
 // I2C interface mutex
-static SemaphoreHandle_t i2c_mutex;
+SemaphoreHandle_t i2c_mutex = NULL;
+
+typedef struct {
+  char* buffer;
+  int buffer_idx;
+} input_queue_t;
 
 
 /*
  * FUNCTIONS
  */
 
-void input_char_callback(void* ignore) {
+void input_char_callback(void* param) {
+  input_queue_t* input = (input_queue_t*)param;
 
-  log_debug("callback called!");
-  int input = getchar_timeout_us(0);
-  if (input < 0) {
-    log_debug("Failed to fetch character");
+  int in = getchar_timeout_us(100);
+  if (in < 0) {
     return;
   }
-  printf("got character: %d\n", input);
+
   // Append data on buffer
-  if ('\r' != input) {
-    g_inputIdx = (g_inputIdx + 1) % INPUT_BUFFER_SIZE;
-    g_inputBuffer[g_inputIdx] = (char)input;
-    log_debug("saved character");
+  if ('\r' != in) {
+    input->buffer_idx %= INPUT_BUFFER_SIZE;
+    input->buffer[input->buffer_idx++] = (char)in;
   }
   // Tell console task to process
   else {
     xTaskNotifyGive(console_task_handle);
-    log_debug("processing line");
   }
 }
 
@@ -74,14 +72,11 @@ void led_task_pico(void* unused_arg) {
     
     while (true) {
         // Turn Pico LED on
-        log_debug("PICO LED FLASH");
-        pico_led_state = 1;
-        gpio_put(PICO_DEFAULT_LED_PIN, pico_led_state);
+        gpio_put(PICO_DEFAULT_LED_PIN, 1);
         vTaskDelay(ms_delay);
         
         // Turn Pico LED off
-        pico_led_state = 0;
-        gpio_put(PICO_DEFAULT_LED_PIN, pico_led_state);
+        gpio_put(PICO_DEFAULT_LED_PIN, 0);
         vTaskDelay(ms_delay);
     }
 }
@@ -89,15 +84,19 @@ void led_task_pico(void* unused_arg) {
 void sensor_task(void* unused_arg) {
 
   struct bno055_accel_t accel_xyz = {0, 0, 0};
+  log_debug("Initializing BNO055 sensor configurations");
   xSemaphoreTake(i2c_mutex, portMAX_DELAY);
   bno055_set_operation_mode(BNO055_OPERATION_MODE_AMG);
   xSemaphoreGive(i2c_mutex);
+  log_debug("Initialized sensor configurations!");
 
   while(true) {
-    vTaskDelay(pdMS_TO_TICKS(100));
+    vTaskDelay(pdMS_TO_TICKS(2000));
+
     xSemaphoreTake(i2c_mutex, portMAX_DELAY);
     bno055_read_accel_xyz(&accel_xyz);
     xSemaphoreGive(i2c_mutex);
+
     printf("Acceleration data:\n");
     printf("Ax: %d\n", accel_xyz.x);
     printf("Ay: %d\n", accel_xyz.y);
@@ -109,18 +108,38 @@ void sensor_task(void* unused_arg) {
  * @brief Read messages from stdin and process the command.
  */
 void console_task(void* unused_arg) {
+  char input_buffer[INPUT_BUFFER_SIZE];
+  input_queue_t input = {input_buffer, 0};
 
-  // Set callback to when a character is received
-  stdio_set_chars_available_callback(input_char_callback, NULL);
 
   while (true) {
+    // Set callback to when a character is received
+    stdio_set_chars_available_callback(input_char_callback, &input);
+
     // Wait until line is received
     ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 
-    if(0 == strcmp("scan", g_inputBuffer)) {
+    // temporarily cancel the callbacks
+    stdio_set_chars_available_callback(NULL, NULL);
+
+    printf("processing command: [");
+    for(int ii = 0; ii < input.buffer_idx; ii++) {
+      printf("%c", input_buffer[ii]);
+    }
+    printf("]\n");
+
+    if ('\0' == input_buffer[0]) {
+      input.buffer_idx = 0;
+      continue;
+    }
+
+    if(0 == strncmp("scan", input_buffer, input.buffer_idx)) {
       // Notify i2c scan task to run
       xTaskNotifyGive(port_scan_task_handle);
     }
+
+    input_buffer[0] = '\0';
+    input.buffer_idx = 0;
   }
 }
 
@@ -129,6 +148,7 @@ void i2c_port_scan(void* unused_arg) {
     while (true) {
       // Wait until task is notified to do a scan
       ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+
       log_debug("Waiting for i2c device to be available!");
       xSemaphoreTake(i2c_mutex, portMAX_DELAY);
 
@@ -275,40 +295,44 @@ int main() {
     
     BaseType_t accel_status = xTaskCreate(sensor_task,
                                           "BNO055_ACCEL",
-                                          512,
+                                          1024,
                                           NULL,
                                           4,
                                           &sensor_task_handle);
 
     BaseType_t pico_status = xTaskCreate(led_task_pico, 
                                          "PICO_LED_TASK", 
-                                         128, 
+                                         1024,
                                          NULL, 
                                          3,
                                          &pico_task_handle);
 
     BaseType_t gpio_status = xTaskCreate(console_task,
                                          "CONSOLE_TASK",
-                                         128, 
+                                         1024,
                                          NULL, 
                                          2,
                                          &console_task_handle);
 
     BaseType_t scan_status = xTaskCreate(i2c_port_scan,
                                          "I2C_PORT_SCAN",
-                                         128,
+                                         1024,
                                          NULL,
                                          1,
                                          &port_scan_task_handle);
     
+    i2c_mutex = xSemaphoreCreateBinary();
 
     // Start the FreeRTOS scheduler
     // FROM 1.0.1: Only proceed with valid tasks
-    if (pico_status == pdPASS || gpio_status == pdPASS || scan_status == pdPASS || accel_status == pdPASS) {
+    if (pico_status == pdPASS || gpio_status == pdPASS || scan_status == pdPASS || accel_status == pdPASS)
+    {
+        xSemaphoreGive(i2c_mutex);
         vTaskStartScheduler();
     }
     
 FAIL_INIT:
+    printf("[ERROR] Failed to initialize tasks!");
     // We should never get here, but just in case...
     while(true) {
         // NOP
