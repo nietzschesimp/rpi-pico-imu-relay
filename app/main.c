@@ -89,10 +89,13 @@ void led_task_pico(void* unused_arg) {
 
 void sensor_task(void* unused_arg) {
 
-  struct bno055_accel_t accel_xyz = {0, 0, 0};
+  BNO055_RETURN_FUNCTION_TYPE rc;
+  struct bno055_euler_double_t euler_hrp = {0.0, 0.0, 0.0};
   log_debug("Initializing BNO055 sensor configurations");
+
+  // Set the operation to be an IMU
   xSemaphoreTake(i2c_mutex, portMAX_DELAY);
-  bno055_set_operation_mode(BNO055_OPERATION_MODE_AMG);
+  bno055_set_operation_mode(BNO055_OPERATION_MODE_IMUPLUS);
   xSemaphoreGive(i2c_mutex);
   log_debug("Initialized sensor configurations!");
 
@@ -100,13 +103,18 @@ void sensor_task(void* unused_arg) {
     vTaskDelay(pdMS_TO_TICKS(2000));
 
     xSemaphoreTake(i2c_mutex, portMAX_DELAY);
-    bno055_read_accel_xyz(&accel_xyz);
+    rc = bno055_convert_double_euler_hpr_deg(&euler_hrp);
     xSemaphoreGive(i2c_mutex);
 
-    printf("Acceleration data:\n");
-    printf("Ax: %d\n", accel_xyz.x);
-    printf("Ay: %d\n", accel_xyz.y);
-    printf("Az: %d\n", accel_xyz.z);
+    if (BNO055_SUCCESS == rc) {
+      printf("Euler data:\n");
+      printf("y: %f\n", euler_hrp.h);   // Print heading (yaw)
+      printf("p: %f\n", euler_hrp.p);   // Print pitch
+      printf("r: %f\n", euler_hrp.r);   // Print roll
+    }
+    else {
+      log_error("Failed to read sensor data!");
+    }
   }
 }
 
