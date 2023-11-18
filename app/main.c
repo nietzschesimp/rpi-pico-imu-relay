@@ -9,6 +9,7 @@
 #include "main.h"
 #include "pico/stdio.h"
 #include "pico/stdlib.h"
+#include "pico/time.h"
 
 
 /*
@@ -351,9 +352,14 @@ int main() {
     }
     
 FAIL_INIT:
-    printf("[ERROR] Failed to initialize tasks!");
     // We should never get here, but just in case...
     while(true) {
-        // NOP
+      for (int ii = 0; ii < 3; ii++) {
+        gpio_put(PICO_DEFAULT_LED_PIN, 1);
+        sleep_ms(100);
+        gpio_put(PICO_DEFAULT_LED_PIN, 0);
+        sleep_ms(100);
+      }
+      sleep_ms(400);
     };
 }
