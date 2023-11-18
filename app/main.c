@@ -8,6 +8,7 @@
  */
 #include "main.h"
 #include "pico/stdio.h"
+#include "pico/stdlib.h"
 
 
 /*
@@ -100,7 +101,7 @@ void sensor_task(void* unused_arg) {
   log_debug("Initialized sensor configurations!");
 
   while(true) {
-    vTaskDelay(pdMS_TO_TICKS(2000));
+    vTaskDelay(pdMS_TO_TICKS(500));
 
     xSemaphoreTake(i2c_mutex, portMAX_DELAY);
     rc = bno055_convert_double_euler_hpr_deg(&euler_hrp);
@@ -279,6 +280,13 @@ int main() {
 
     // Initialize stdio
     stdio_init_all();
+
+    // Set clock rate
+    bool rc = set_sys_clock_khz(configCPU_CLOCK_HZ/1000, true);
+    if (!rc) {
+      goto FAIL_INIT;
+    }
+    setup_default_uart();
 
     // Initialize i2c
     i2c_init(i2c_default, 115200);

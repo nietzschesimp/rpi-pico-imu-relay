@@ -21,7 +21,7 @@ target_link_libraries(${APP_NAME} LINK_PUBLIC
     bno055)
 
 # Enable/disable STDIO via USB and UART
-pico_enable_stdio_usb(${APP_NAME} 0)
+pico_enable_stdio_usb(${APP_NAME} 1)
 pico_enable_stdio_uart(${APP_NAME} 1)
 
 # Enable extra build products
