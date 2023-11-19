@@ -2,7 +2,7 @@
 
 This repo contains my base project for a [FreeRTOS](https://freertos.org/) application to be ran on the
 [Raspberry Pi RP2040 microcontroller](https://www.raspberrypi.com/products/rp2040/).
-This was developed using a Adafruit Feather RP2040.
+This was developed using a [Adafruit Feather RP2040](https://www.adafruit.com/product/4884).
 
 The application connects using the default I2C interface to a BNO055 sensor and extracts pitch, yaw, and roll from it and prints it to stdio.
 Stdio is configured to be over UART using interface UART0 or USB.
@@ -57,7 +57,11 @@ See [this blog post of smittyone](https://blog.smittytone.net/2021/02/02/program
 ## Raspberry Pi RP2040 Variants
 
 If your board is a variant of the Raspberry Pi Pico, you need to specify this using the `PICO_BOARD` cmake flag in step 5 of usage.
-For example, the Adafruit Feather RP2040: `cmake --build build -DPICO_BOARD=adafruit_feather_rp2040`.
+For example, the Adafruit Feather RP2040:
+
+```shell
+cmake --build build -DPICO_BOARD=adafruit_feather_rp2040
+```
 
 
 ## Debug vs Release
