@@ -227,7 +227,7 @@ s8 bno055_i2c_bus_read(u8 dev_addr, u8 reg_addr, u8* reg_data, u8 cnt) {
 
 
 void bno055_i2c_bus_delay(u32 msec) {
-  sleep_ms(msec);
+  vTaskDelay(pdMS_TO_TICKS(msec));
 }
 
 
