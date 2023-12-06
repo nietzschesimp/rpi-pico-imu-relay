@@ -11,24 +11,32 @@
 
 
 // FreeRTOS
-#include <FreeRTOS.h>
-#include <task.h>
-#include <queue.h>
-#include <semphr.h>
 #include <FreeRTOSConfig.h>
+#include <FreeRTOS.h>
+#include <semphr.h>
+#include <queue.h>
+#include <task.h>
+
 // C
 #include <stdbool.h>
+#include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include <string.h>
 #include <time.h>
+
 // Pico SDK
 #include "boards/adafruit_feather_rp2040.h"
-#include "pico/stdlib.h"            // Includes `hardware_gpio.h`
 #include "pico/binary_info.h"
-#include "hardware/i2c.h"
+#include <hardware/i2c.h>
+#include <pico/i2c_slave.h>
+#include <pico/stdlib.h>
+
 // bno055
 #include "bno055.h"
+
+// Local includes
+#include "bno055_driver_interface.h"
+#include "logging.h"
 
 
 #ifdef __cplusplus

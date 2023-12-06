@@ -7,18 +7,16 @@
  *
  */
 #include "main.h"
+#include "logging.h"
 #include "pico/stdio.h"
 #include "pico/stdlib.h"
 #include "pico/time.h"
 
+#define I2C_TARGET_ADDR 0x69
+#define I2C_RPI_SDA_PIN 0
+#define I2C_RPI_SCL_PIN 1
 
-/*
- * GLOBALS
- */
-
-// FROM 1.0.1 Record references to the tasks
-TaskHandle_t port_scan_task_handle = NULL;
-TaskHandle_t console_task_handle = NULL;
+TaskHandle_t rpi_encode_task_handle = NULL;
 TaskHandle_t sensor_task_handle = NULL;
 TaskHandle_t pico_task_handle = NULL;
 
@@ -26,93 +24,63 @@ TaskHandle_t pico_task_handle = NULL;
 struct bno055_t sensor_handle;
 
 // I2C interface mutex
-SemaphoreHandle_t i2c_mutex = NULL;
+volatile QueueHandle_t sensor_queue = NULL;
 
-typedef struct {
-  char* buffer;
-  int buffer_idx;
-} input_queue_t;
+static struct {
+  char len;
+  bool read_len;
+  char index;
+  bool index_written;
+  char buffer[256];
+} json_measurement;
 
-
-/*
- * FUNCTIONS
- */
-
-void input_char_callback(void* param) {
-  input_queue_t* input = (input_queue_t*)param;
-
-  int in = getchar_timeout_us(100);
-  if (in < 0) {
-    return;
-  }
-
-  if ('\r' == in) {
-    // Tell console task to process line
-    input->buffer_idx %= INPUT_BUFFER_SIZE;
-    input->buffer[input->buffer_idx++] = '\0';
-    xTaskNotifyGive(console_task_handle);
-  }
-  else if ((127 == in) && (input->buffer_idx > 0)) {
-    // If we can delete characters delete one
-    input->buffer[input->buffer_idx--] = '\0';
-  }
-  else {
-    // Append data on buffer
-    input->buffer_idx %= INPUT_BUFFER_SIZE;
-    input->buffer[input->buffer_idx++] = (char)in;
-  }
-}
 
 /**
  * @brief Repeatedly flash the Pico's built-in LED.
  */
-void led_task_pico(void* unused_arg) {
+void led_task_pico(void* unused_arg)
+{
+  // Store the Pico LED state
+  uint8_t pico_led_state = 0;
 
-    // Set a delay time of exactly 1s
-    const TickType_t ms_delay = 1000 / portTICK_PERIOD_MS;
+  // Configure the Pico's on-board LED
+  gpio_init(PICO_DEFAULT_LED_PIN);
+  gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
 
-    // Store the Pico LED state
-    uint8_t pico_led_state = 0;
-    
-    // Configure the Pico's on-board LED
-    gpio_init(PICO_DEFAULT_LED_PIN);
-    gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
-    
-    while (true) {
-        // Turn Pico LED on
-        gpio_put(PICO_DEFAULT_LED_PIN, 1);
-        vTaskDelay(ms_delay);
-        
-        // Turn Pico LED off
-        gpio_put(PICO_DEFAULT_LED_PIN, 0);
-        vTaskDelay(ms_delay);
-    }
+  while (true) {
+    // Turn Pico LED on
+    gpio_put(PICO_DEFAULT_LED_PIN, 1);
+    vTaskDelay(pdMS_TO_TICKS(1000));
+
+    // Turn Pico LED off
+    gpio_put(PICO_DEFAULT_LED_PIN, 0);
+    vTaskDelay(pdMS_TO_TICKS(1000));
+  }
 }
 
-void sensor_task(void* unused_arg) {
 
+void sensor_task(void* unused_arg)
+{
   BNO055_RETURN_FUNCTION_TYPE rc;
   struct bno055_euler_double_t euler_hrp = {0.0, 0.0, 0.0};
   log_debug("Initializing BNO055 sensor configurations");
 
   // Set the operation to be an IMU
-  xSemaphoreTake(i2c_mutex, portMAX_DELAY);
   bno055_set_operation_mode(BNO055_OPERATION_MODE_IMUPLUS);
-  xSemaphoreGive(i2c_mutex);
   log_debug("Initialized sensor configurations!");
 
   while(true) {
     vTaskDelay(pdMS_TO_TICKS(500));
 
-    xSemaphoreTake(i2c_mutex, portMAX_DELAY);
     rc = bno055_convert_double_euler_hpr_deg(&euler_hrp);
-    xSemaphoreGive(i2c_mutex);
-
     if (BNO055_SUCCESS == rc) {
       printf("Euler data:\n");
       printf("y: %f\n", euler_hrp.h);   // Print heading (yaw)
       printf("p: %f\n", euler_hrp.p);   // Print pitch
       printf("r: %f\n", euler_hrp.r);   // Print roll
+
+      // Send data to be encoded
+      xQueueSendToBack(sensor_queue, &euler_hrp, portMAX_DELAY);
     }
     else {
       log_error("Failed to read sensor data!");
@@ -120,185 +88,132 @@ void sensor_task(void* unused_arg) {
   }
 }
 
-/**
- * @brief Read messages from stdin and process the command.
- */
-void console_task(void* unused_arg) {
-  char input_buffer[INPUT_BUFFER_SIZE] = {0};
-  input_queue_t input = {input_buffer, 0};
 
+void rpi_encode_task(void* unused_arg)
+{
+  struct bno055_euler_double_t msg = {0};
+  char buf[128] = {0};
+  int msg_len = 0;
+  int count = 0;
+  BaseType_t rc;
 
   while (true) {
-    // Set callback to when a character is received
-    stdio_set_chars_available_callback(input_char_callback, &input);
-
-    // Wait until line is received
-    ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-
-    // temporarily cancel the callbacks
-    stdio_set_chars_available_callback(NULL, NULL);
-
-    printf("processing command: [");
-    for(int ii = 0; ii < input.buffer_idx; ii++) {
-      printf("%c", input_buffer[ii]);
-    }
-    printf("]\n");
-
-    if(0 == strcmp("scan", input_buffer)) {
-      // Notify i2c scan task to run
-      xTaskNotifyGive(port_scan_task_handle);
+    // Wait until a sensor measurement is received
+    rc = xQueueReceive(sensor_queue, &msg, portMAX_DELAY);
+    if (rc != pdPASS) {
+      // Didn't sucessfully receive a message from the queue, skip
+      log_error("Failed to receive data from sensor task!");
+      continue;
     }
 
-    for (int ii = 0; ii < input.buffer_idx; ii++) {
-      input_buffer[ii] = '\0';
-    }
-    input.buffer_idx = 0;
-  }
-}
-
-void i2c_port_scan(void* unused_arg) {
-
-    while (true) {
-      // Wait until task is notified to do a scan
+    if (json_measurement.len != 0) {
+      // Data still hasnt been sent, wait until RPI finishes reading
       ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-
-      log_debug("Waiting for i2c device to be available!");
-      xSemaphoreTake(i2c_mutex, portMAX_DELAY);
-
-      printf("\nI2C Bus Scan\n");
-      printf("   0  1  2  3  4  5  6  7  8  9  A  B  C  D  E  F\n");
-
-      for (int addr = 0; addr < (1 << 7); ++addr) {
-        if (addr % 16 == 0) {
-          printf("%02x ", addr);
-        }
-
-        // Skip over any reserved addresses.
-        int ret;
-        uint8_t rxdata;
-        if ((addr & 0x78) == 0 || (addr & 0x78) == 0x78) {
-          ret = -1;
-        }
-        else {
-          ret = i2c_read_blocking(i2c_default, addr, &rxdata, 1, false);
-        }
-
-        printf(ret < 0 ? "." : "@");
-        printf(addr % 16 == 15 ? "\n" : "  ");
-      }
-      printf("\nEnd Scan\n");
-
-      xSemaphoreGive(i2c_mutex);
+      log_debug("Reset index and len");
     }
-}
 
-s8 bno055_i2c_bus_write(u8 dev_addr, u8 reg_addr, u8 *reg_data, u8 cnt) {
-
-  u8 array[cnt+1];
-  array[0] = reg_addr;
-
-  for (int i = 1; i < (cnt + 1); i++) {
-    array[i] = reg_data[i-1];
+    // Take message contents and render them to a JSON object
+    snprintf(json_measurement.buffer,
+             sizeof(json_measurement.buffer),
+             "{"
+             "yaw: %f,"
+             "pitch: %f,"
+             "roll: %f"
+             "}\n",
+             msg.h, msg.p, msg.r);
+    json_measurement.len = strlen(json_measurement.buffer);
   }
+}
 
-  int written = i2c_write_blocking(i2c_default, dev_addr, array, (cnt + 1), false);
-  if (written != (cnt + 1)) {
-    log_error("bno055_I2C_bus_write() - Failed to write message");
-    return -1;
+
+static void i2c_slave_handler(i2c_inst_t *i2c, i2c_slave_event_t event)
+{
+  switch (event) {
+    case I2C_SLAVE_RECEIVE: // master has written some data
+      if (!json_measurement.index_written) {
+        // writes always start with the memory address
+        json_measurement.index = i2c_read_byte_raw(i2c);
+        json_measurement.index_written = true;
+        log_debug("Set index");
+      }
+      break;
+    case I2C_SLAVE_REQUEST: // master is requesting data
+    {
+      // If no bytes to read
+      if (json_measurement.len == 0) {
+        log_debug("No bytes to read!");
+        break;
+      }
+
+      // If RPI hasn't read the length, give it the length
+      if (!json_measurement.read_len) {
+        i2c_write_byte_raw(i2c, json_measurement.len);
+        json_measurement.read_len = true;
+        json_measurement.index = 0;
+        log_debug("Read length");
+      }
+      else {
+        i2c_write_byte_raw(i2c, json_measurement.buffer[json_measurement.index]);
+        json_measurement.index++;
+        json_measurement.len--;
+      }
+      break;
+    }
+    case I2C_SLAVE_FINISH: // master has signalled Stop / Restart
+    {
+      log_debug("Finished reading");
+      json_measurement.index_written = false;
+      if (json_measurement.len == 0) {
+        log_debug("Notifying encoder to continue");
+        json_measurement.read_len = false;
+        json_measurement.index = 0;
+        xTaskNotifyGive(rpi_encode_task_handle);
+      }
+      break;
+    }
+    default:
+    {
+      log_error("Got unexpected event from i2c interface!");
+      break;
+    }
   }
-  return BNO055_SUCCESS;
-}
-
-
-s8 bno055_i2c_bus_read(u8 dev_addr, u8 reg_addr, u8* reg_data, u8 cnt) {
-
-  int written = i2c_write_blocking(i2c_default, dev_addr, &reg_addr, 1, true);
-  if (written < 1) {
-    log_error("bno055_i2c_bus_read() - Failed to write request");
-    return -1;
-  }
-  int read = i2c_read_blocking(i2c_default, dev_addr, reg_data, cnt, false);
-  if (read != cnt) {
-    log_error("bno055_i2c_bus_read() - Failed to read");
-    return -1;
-  }
-  return BNO055_SUCCESS;
-}
-
-
-void bno055_i2c_bus_delay(u32 msec) {
-  vTaskDelay(pdMS_TO_TICKS(msec));
-}
-
-
-void bno055_sensor_init(struct bno055_t* device) {
-
-  device->bus_write = bno055_i2c_bus_write;
-  device->bus_read = bno055_i2c_bus_read;
-  device->delay_msec = bno055_i2c_bus_delay;
-  device->dev_addr = BNO055_I2C_ADDR1;
-}
-
-
-/**
- * @brief Generate and print a debug message from a supplied string.
- *
- * @param msg: The base message to which `[DEBUG]` will be prefixed.
- */
-void log_debug(const char* msg) {
-
-#ifdef DEBUG
-    uint msg_length = 9 + strlen(msg);
-    char* sprintf_buffer = malloc(msg_length);
-    sprintf(sprintf_buffer, "[DEBUG] %s\n", msg);
-    printf("%s", sprintf_buffer);
-    free(sprintf_buffer);
-#endif
-}
-
-void log_error(const char* msg) {
-
-  uint msg_length = 9 + strlen(msg);
-  char* sprintf_buffer = malloc(msg_length);
-  sprintf(sprintf_buffer, "[ERROR] %s\n", msg);
-  printf("%s", sprintf_buffer);
-  free(sprintf_buffer);
 }
 
 /**
  * @brief Show basic device info.
  */
-void log_device_info(void) {
-
-    printf("App: %s %s (%i)\n", APP_NAME, APP_VERSION, BUILD_NUM);
+void log_device_info(void)
+{
+  printf("App: %s %s (%i)\n", APP_NAME, APP_VERSION, BUILD_NUM);
 }
 
 
 /*
  * RUNTIME START
  */
-int main() {
-
-    // Initialize stdio
-    stdio_init_all();
-
+int main()
+{
     // Set clock rate
     bool rc = set_sys_clock_khz(configCPU_CLOCK_HZ/1000, true);
     if (!rc) {
       goto FAIL_INIT;
     }
-    setup_default_uart();
+    //setup_default_uart();
 
-    // Initialize i2c
-    i2c_init(i2c_default, 115200);
-    gpio_set_function(PICO_DEFAULT_I2C_SDA_PIN, GPIO_FUNC_I2C);
-    gpio_set_function(PICO_DEFAULT_I2C_SCL_PIN, GPIO_FUNC_I2C);
-    gpio_pull_up(PICO_DEFAULT_I2C_SDA_PIN);
-    gpio_pull_up(PICO_DEFAULT_I2C_SCL_PIN);
-    bi_decl(bi_2pins_with_func(PICO_DEFAULT_I2C_SDA_PIN, PICO_DEFAULT_I2C_SCL_PIN, GPIO_FUNC_I2C));
+    // Initialize stdio
+    stdio_usb_init();
+
+    // Initialize secondary i2c interface
+    gpio_init(I2C_RPI_SDA_PIN);
+    gpio_set_function(I2C_RPI_SDA_PIN, GPIO_FUNC_I2C);
+    gpio_pull_up(I2C_RPI_SDA_PIN);
+    gpio_init(I2C_RPI_SCL_PIN);
+    gpio_set_function(I2C_RPI_SCL_PIN, GPIO_FUNC_I2C);
+    gpio_pull_up(I2C_RPI_SCL_PIN);
+    i2c_slave_init(i2c0, I2C_TARGET_ADDR, &i2c_slave_handler);
 
     // Initialize sensor
-    bno055_sensor_init(&sensor_handle);
+    bno055_sensor_init(&sensor_handle, BNO055_I2C_ADDR1);
     s8 sensor_rc = bno055_init(&sensor_handle);
     if (sensor_rc != 0) {
       log_error("Failed to initalize sensor!");
@@ -314,40 +229,34 @@ int main() {
     log_device_info();
     
     BaseType_t accel_status = xTaskCreate(sensor_task,
-                                          "BNO055_ACCEL",
-                                          1024,
+                                          "BNO055_READ_TASK",
+                                          4096,
                                           NULL,
                                           4,
                                           &sensor_task_handle);
 
     BaseType_t pico_status = xTaskCreate(led_task_pico, 
                                          "PICO_LED_TASK", 
-                                         256,
+                                         4096,
                                          NULL, 
                                          3,
                                          &pico_task_handle);
 
-    BaseType_t gpio_status = xTaskCreate(console_task,
-                                         "CONSOLE_TASK",
-                                         1024,
-                                         NULL, 
-                                         2,
-                                         &console_task_handle);
+    BaseType_t rpi_status = xTaskCreate(rpi_encode_task,
+                                        "RPI_ENCODE_TASK",
+                                        4096,
+                                        NULL,
+                                        2,
+                                        &rpi_encode_task_handle);
 
-    BaseType_t scan_status = xTaskCreate(i2c_port_scan,
-                                         "I2C_PORT_SCAN",
-                                         256,
-                                         NULL,
-                                         1,
-                                         &port_scan_task_handle);
-    
-    i2c_mutex = xSemaphoreCreateBinary();
+    sensor_queue = xQueueCreate(16, sizeof(struct bno055_euler_double_t));
 
     // Start the FreeRTOS scheduler
     // FROM 1.0.1: Only proceed with valid tasks
-    if (pico_status == pdPASS || gpio_status == pdPASS || scan_status == pdPASS || accel_status == pdPASS)
+    if (pico_status == pdPASS ||
+        accel_status == pdPASS ||
+        rpi_status == pdPASS)
     {
-        xSemaphoreGive(i2c_mutex);
         vTaskStartScheduler();
     }
     
@@ -361,5 +270,5 @@ FAIL_INIT:
         sleep_ms(100);
       }
       sleep_ms(400);
-    };
+    }
 }
