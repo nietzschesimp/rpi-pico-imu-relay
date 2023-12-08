@@ -10,23 +10,23 @@ typedef struct
 
 MessageBufferHandle_t msg_stream_handle = NULL;
 SemaphoreHandle_t msg_lock = NULL;
-unsigned char logging_level = LL_DEBUG;
+unsigned char logging_level = LOG_LEVEL;
 
 
 const char* get_fmt_from_level(unsigned char level)
 {
   switch(level)
   {
-    case LL_DEBUG:
+    case LOG_LEVEL_DEBUG:
       return "[DEBUG] %s\n";
-    case TRACE:
+    case LOG_LEVEL_TRACE:
       return "[TRACE] %s\n";
-    case INFO:
+    case LOG_LEVEL_INFO:
       return "[INFO] %s\n";
-    case WARN:
-      return "[WARN] %s\n";
-    case ERROR:
+    case LOG_LEVEL_ERROR:
       return "[ERROR] %s\n";
+    case LOG_LEVEL_FATAL:
+      return "[FATAL] %s\n";
     default:
       return "";
   }
@@ -45,7 +45,7 @@ void log_task(void* unused)
                                     portMAX_DELAY);
     if (msg_len < 1) {
       // Didn't sucessfully receive a message from the queue, skip
-      printf("[ERROR] Failed to receive logging info");
+      printf("[FATAL] Failed to receive logging info");
       continue;
     }
     
@@ -63,12 +63,12 @@ void log_task(void* unused)
 inline void log_init()
 {
   if(xTaskGetSchedulerState() != taskSCHEDULER_NOT_STARTED) {
-    printf("[ERROR] Scheduler has already started!\n");
+    printf("[FATAL] Scheduler has already started!\n");
   }
   
   msg_stream_handle = xMessageBufferCreate(MSG_QUEUE_SIZE);
   if(msg_stream_handle == NULL) {
-    printf("[ERROR] Could not initialize message stream!\n");
+    printf("[FATAL] Could not initialize message stream!\n");
     return;
   }
   
@@ -81,7 +81,7 @@ inline void log_init()
                                       9,
                                       NULL);
   if(!created_task) {
-    printf("[ERROR] Could not initialize message stream!\n");
+    printf("[FATAL] Could not initialize message stream!\n");
     vMessageBufferDelete(msg_stream_handle);
     vSemaphoreDelete(msg_lock);
     return;
@@ -93,7 +93,7 @@ inline void log_init()
 void log_enqueue(unsigned char level, const char* msg)
 {
   // Check if logging level is valid
-  if ((level < logging_level) || (level >= MAX_LOG_LEVEL)) {
+  if ((level < logging_level) || (level >= LOG_LEVEL_MAX)) {
     return;
   }
   
@@ -102,6 +102,7 @@ void log_enqueue(unsigned char level, const char* msg)
   size_t msg_len = strlen(msg);
   msg_len = (msg_len > MAX_MSG_LEN) ? MAX_MSG_LEN : msg_len;
   memcpy(log_event.msg, msg, msg_len);
+  log_event.level = level;
   xSemaphoreTake(msg_lock, portMAX_DELAY);
   xMessageBufferSend(msg_stream_handle, &log_event, sizeof(log_event_t), portMAX_DELAY);
   xSemaphoreGive(msg_lock);

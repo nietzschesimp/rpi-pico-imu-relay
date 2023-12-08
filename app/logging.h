@@ -10,24 +10,25 @@
 #include <semphr.h>
 #include <task.h>
 
-#define MAX_MSG_LEN 128
-#define MSG_QUEUE_SIZE 4096
-
 enum log_level
 {
-  LL_DEBUG,
-  TRACE,
-  INFO,
-  WARN,
-  ERROR,
-  MAX_LOG_LEVEL,
+  LOG_LEVEL_DEBUG,
+  LOG_LEVEL_TRACE,
+  LOG_LEVEL_INFO,
+  LOG_LEVEL_ERROR,
+  LOG_LEVEL_FATAL,
+  LOG_LEVEL_MAX,
 };
 
-#define LOG_DEBUG(x) log_enqueue(DEBUG, x)
-#define LOG_TRACE(x) log_enqueue(TRACE, x)
-#define LOG_INFO(x) log_enqueue(INFO, x)
-#define LOG_WARN(x) log_enqueue(WARN, x)
-#define LOG_ERROR(x) log_enqueue(ERROR, x)
+#define LOG_DEBUG(x) log_enqueue(LOG_LEVEL_DEBUG, x)
+#define LOG_TRACE(x) log_enqueue(LOG_LEVEL_TRACE, x)
+#define LOG_INFO(x) log_enqueue(LOG_LEVEL_INFO, x)
+#define LOG_ERROR(x) log_enqueue(LOG_LEVEL_ERROR, x)
+#define LOG_FATAL(x) log_enqueue(LOG_LEVEL_FATAL, x)
+
+#define MAX_MSG_LEN 128
+#define MSG_QUEUE_SIZE 4096
+#define LOG_LEVEL LOG_LEVEL_DEBUG
 
 void log_init();
 
