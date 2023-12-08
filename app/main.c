@@ -17,6 +17,7 @@
 #define I2C_RPI_SCL_PIN 1
 
 TaskHandle_t rpi_encode_task_handle = NULL;
+TaskHandle_t rpi_read_task_handle = NULL;
 TaskHandle_t sensor_task_handle = NULL;
 TaskHandle_t pico_task_handle = NULL;
 
@@ -63,14 +64,16 @@ void sensor_task(void* unused_arg)
 {
   BNO055_RETURN_FUNCTION_TYPE rc;
   struct bno055_euler_double_t euler_hrp = {0.0, 0.0, 0.0};
-  log_debug("Initializing BNO055 sensor configurations");
+  LOG_DEBUG("Initializing BNO055 sensor configurations");
+  char buf[128] = {0};
 
   // Set the operation to be an IMU
   bno055_set_operation_mode(BNO055_OPERATION_MODE_IMUPLUS);
-  log_debug("Initialized sensor configurations!");
+  LOG_DEBUG("Initialized sensor configurations!");
 
   while(true) {
-    vTaskDelay(pdMS_TO_TICKS(500));
+    ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+    LOG_DEBUG("Reading sensor data");
 
     rc = bno055_convert_double_euler_hpr_deg(&euler_hrp);
     if (BNO055_SUCCESS == rc) {
@@ -81,9 +84,10 @@ void sensor_task(void* unused_arg)
 
       // Send data to be encoded
       xQueueSendToBack(sensor_queue, &euler_hrp, portMAX_DELAY);
+      LOG_DEBUG("Sent data to be encoded");
     }
     else {
-      log_error("Failed to read sensor data!");
+      LOG_ERROR("Failed to read sensor data!");
     }
   }
 }
@@ -92,7 +96,6 @@ void sensor_task(void* unused_arg)
 void rpi_encode_task(void* unused_arg)
 {
   struct bno055_euler_double_t msg = {0};
-  char buf[128] = {0};
   int msg_len = 0;
   int count = 0;
   BaseType_t rc;
@@ -102,26 +105,63 @@ void rpi_encode_task(void* unused_arg)
     rc = xQueueReceive(sensor_queue, &msg, portMAX_DELAY);
     if (rc != pdPASS) {
       // Didn't sucessfully receive a message from the queue, skip
-      log_error("Failed to receive data from sensor task!");
+      LOG_ERROR("Failed to receive data from sensor task!");
       continue;
     }
 
-    if (json_measurement.len != 0) {
-      // Data still hasnt been sent, wait until RPI finishes reading
-      ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-      log_debug("Reset index and len");
-    }
+    // Clear encoding buffer
+    memset(json_measurement.buffer, 0x00, sizeof(json_measurement.buffer));
 
     // Take message contents and render them to a JSON object
     snprintf(json_measurement.buffer,
              sizeof(json_measurement.buffer),
              "{"
-             "yaw: %f,"
-             "pitch: %f,"
-             "roll: %f"
-             "}\n",
+             "\"yaw\":%0.4f,"
+             "\"pitch\":%0.4f,"
+             "\"roll\":%0.4f"
+             "}",
              msg.h, msg.p, msg.r);
     json_measurement.len = strlen(json_measurement.buffer);
+    json_measurement.read_len = false;
+    LOG_DEBUG("Encoded sensor data into JSON to send");
+    LOG_DEBUG(json_measurement.buffer);
+  }
+}
+
+
+void rpi_read_task(void* unused_args)
+{
+  size_t available, num_send;
+  while(true) {
+    // Wait until notified that RPI wants to read
+    ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+
+    if (json_measurement.len <= 0) {
+      // Tell RPI no samples are available
+      i2c_write_byte_raw(i2c0, 0);
+      LOG_DEBUG("No bytes to read, notifying sensor reader...");
+      // Notify sensor read task to take a new measurement
+      xTaskNotifyGive(sensor_task_handle);
+      continue;
+    }
+
+    // If RPI hasn't read the length, give it the length
+    if (!json_measurement.read_len) {
+      i2c_write_byte_raw(i2c0, json_measurement.len);
+      json_measurement.read_len = true;
+      json_measurement.index = 0;
+    }
+    // Write bytes from the encoded measurement buffer
+    else {
+      num_send = i2c_get_write_available(i2c0);
+      if (num_send > json_measurement.len) {
+        num_send = json_measurement.len;
+      }
+      i2c_write_raw_blocking(i2c0, json_measurement.buffer + json_measurement.index, num_send);
+      json_measurement.index += num_send;
+      json_measurement.len -= num_send;
+      printf("Sent %d bytes to RPI\n", num_send);
+    }
   }
 }
 
@@ -134,46 +174,22 @@ static void i2c_slave_handler(i2c_inst_t *i2c, i2c_slave_event_t event)
         // writes always start with the memory address
         json_measurement.index = i2c_read_byte_raw(i2c);
         json_measurement.index_written = true;
-        log_debug("Set index");
+        printf("Set index: %d\n", json_measurement.index);
       }
       break;
     case I2C_SLAVE_REQUEST: // master is requesting data
     {
-      // If no bytes to read
-      if (json_measurement.len == 0) {
-        log_debug("No bytes to read!");
-        break;
-      }
-
-      // If RPI hasn't read the length, give it the length
-      if (!json_measurement.read_len) {
-        i2c_write_byte_raw(i2c, json_measurement.len);
-        json_measurement.read_len = true;
-        json_measurement.index = 0;
-        log_debug("Read length");
-      }
-      else {
-        i2c_write_byte_raw(i2c, json_measurement.buffer[json_measurement.index]);
-        json_measurement.index++;
-        json_measurement.len--;
-      }
+      xTaskNotifyGive(rpi_read_task_handle);
       break;
     }
     case I2C_SLAVE_FINISH: // master has signalled Stop / Restart
     {
-      log_debug("Finished reading");
       json_measurement.index_written = false;
-      if (json_measurement.len == 0) {
-        log_debug("Notifying encoder to continue");
-        json_measurement.read_len = false;
-        json_measurement.index = 0;
-        xTaskNotifyGive(rpi_encode_task_handle);
-      }
       break;
     }
     default:
     {
-      log_error("Got unexpected event from i2c interface!");
+      LOG_ERROR("Got unexpected event from i2c interface!");
       break;
     }
   }
@@ -202,6 +218,9 @@ int main()
 
     // Initialize stdio
     stdio_usb_init();
+    while(!stdio_usb_connected()){};
+    log_device_info();
+    log_init();
 
     // Initialize secondary i2c interface
     gpio_init(I2C_RPI_SDA_PIN);
@@ -216,46 +235,51 @@ int main()
     bno055_sensor_init(&sensor_handle, BNO055_I2C_ADDR1);
     s8 sensor_rc = bno055_init(&sensor_handle);
     if (sensor_rc != 0) {
-      log_error("Failed to initalize sensor!");
-        goto FAIL_INIT;
+      LOG_ERROR("Failed to initalize sensor!");
+      goto FAIL_INIT;
     }
     sensor_rc = bno055_set_power_mode(BNO055_POWER_MODE_NORMAL);
     if (sensor_rc != 0) {
-      log_error("Failed to set power mode of sensor!");
+      LOG_ERROR("Failed to set power mode of sensor!");
       goto FAIL_INIT;
     }
-
-    // Log app info
-    log_device_info();
     
     BaseType_t accel_status = xTaskCreate(sensor_task,
                                           "BNO055_READ_TASK",
-                                          4096,
+                                          2048,
                                           NULL,
-                                          4,
+                                          2,
                                           &sensor_task_handle);
 
-    BaseType_t pico_status = xTaskCreate(led_task_pico, 
-                                         "PICO_LED_TASK", 
-                                         4096,
-                                         NULL, 
-                                         3,
-                                         &pico_task_handle);
-
-    BaseType_t rpi_status = xTaskCreate(rpi_encode_task,
+    BaseType_t rpi_encode = xTaskCreate(rpi_encode_task,
                                         "RPI_ENCODE_TASK",
-                                        4096,
+                                        2048,
                                         NULL,
-                                        2,
+                                        3,
                                         &rpi_encode_task_handle);
 
-    sensor_queue = xQueueCreate(16, sizeof(struct bno055_euler_double_t));
+    BaseType_t pico_status = xTaskCreate(led_task_pico, 
+                                         "PICO_LED_TASK",
+                                         2048,
+                                         NULL,
+                                         4,
+                                         &pico_task_handle);
+
+    BaseType_t rpi_read = xTaskCreate(rpi_read_task,
+                                        "RPI_ENCODE_TASK",
+                                        2048,
+                                        NULL,
+                                        5,
+                                        &rpi_read_task_handle);
+
+    sensor_queue = xQueueCreate(4, sizeof(struct bno055_euler_double_t));
 
     // Start the FreeRTOS scheduler
     // FROM 1.0.1: Only proceed with valid tasks
     if (pico_status == pdPASS ||
         accel_status == pdPASS ||
-        rpi_status == pdPASS)
+        rpi_encode == pdPASS ||
+        rpi_read == pdPASS)
     {
         vTaskStartScheduler();
     }

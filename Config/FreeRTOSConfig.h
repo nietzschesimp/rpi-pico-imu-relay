@@ -38,7 +38,7 @@
 #define configUSE_TICKLESS_IDLE                 0
 #define configCPU_CLOCK_HZ                      133000000   // 125MHz for Adafruit Feather RP2040, but overclock works
 #define configTICK_RATE_HZ                      1000        // FreeRTOS beats per second
-#define configMAX_PRIORITIES                    5           // Max number of priority values (0-24)
+#define configMAX_PRIORITIES                    10           // Max number of priority values (0-24)
 #define configMINIMAL_STACK_SIZE                128
 #define configMAX_TASK_NAME_LEN                 16
 #define configUSE_16_BIT_TICKS                  0

@@ -12,7 +12,7 @@ s8 bno055_i2c_bus_write(u8 dev_addr, u8 reg_addr, u8* reg_data, u8 cnt)
 
   int written = i2c_write_blocking(i2c_default, dev_addr, array, (cnt + 1), false);
   if (written != (cnt + 1)) {
-    log_error("bno055_I2C_bus_write() - Failed to write message");
+    LOG_ERROR("bno055_I2C_bus_write() - Failed to write message");
     return -1;
   }
   return BNO055_SUCCESS;
@@ -23,12 +23,12 @@ s8 bno055_i2c_bus_read(u8 dev_addr, u8 reg_addr, u8* reg_data, u8 cnt)
 {
   int written = i2c_write_blocking(i2c_default, dev_addr, &reg_addr, 1, true);
   if (written < 1) {
-    log_error("bno055_i2c_bus_read() - Failed to write request");
+    LOG_ERROR("bno055_i2c_bus_read() - Failed to write request");
     return -1;
   }
   int read = i2c_read_blocking(i2c_default, dev_addr, reg_data, cnt, false);
   if (read != cnt) {
-    log_error("bno055_i2c_bus_read() - Failed to read");
+    LOG_ERROR("bno055_i2c_bus_read() - Failed to read");
     return -1;
   }
   return BNO055_SUCCESS;

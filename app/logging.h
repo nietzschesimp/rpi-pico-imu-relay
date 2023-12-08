@@ -5,33 +5,32 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+#include <FreeRTOS.h>
+#include <message_buffer.h>
+#include <semphr.h>
+#include <task.h>
 
-/**
- * @brief Generate and print a debug message from a supplied string.
- * @param msg: The base message to which `[DEBUG]` will be prefixed.
- */
-inline void log_debug(const char* msg)
-{
-#ifdef DEBUG
-  unsigned long msg_length = 9 + strlen(msg);
-  char* sprintf_buffer = malloc(msg_length);
-  sprintf(sprintf_buffer, "[DEBUG] %s\n", msg);
-  printf("%s", sprintf_buffer);
-  free(sprintf_buffer);
-#endif
-}
+#define MAX_MSG_LEN 128
+#define MSG_QUEUE_SIZE 4096
 
-/**
- * @brief Generate and print an error message from a supplied string.
- * @param msg: The base message to which `[ERROR]` will be prefixed.
- */
-inline void log_error(const char* msg)
+enum log_level
 {
-  unsigned long msg_length = 9 + strlen(msg);
-  char* sprintf_buffer = malloc(msg_length);
-  sprintf(sprintf_buffer, "[ERROR] %s\n", msg);
-  printf("%s", sprintf_buffer);
-  free(sprintf_buffer);
-}
+  LL_DEBUG,
+  TRACE,
+  INFO,
+  WARN,
+  ERROR,
+  MAX_LOG_LEVEL,
+};
+
+#define LOG_DEBUG(x) log_enqueue(DEBUG, x)
+#define LOG_TRACE(x) log_enqueue(TRACE, x)
+#define LOG_INFO(x) log_enqueue(INFO, x)
+#define LOG_WARN(x) log_enqueue(WARN, x)
+#define LOG_ERROR(x) log_enqueue(ERROR, x)
+
+void log_init();
+
+void log_enqueue(unsigned char fmt, const char* msg);
 
 #endif
