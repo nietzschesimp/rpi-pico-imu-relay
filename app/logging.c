@@ -97,12 +97,18 @@ void log_task_enqueue(unsigned char level, const char* msg)
     return;
   }
   
-  // Enqueue the message to be logged
-  log_event_t log_event = {0};
+  // Check the message length
   size_t msg_len = strlen(msg);
-  msg_len = (msg_len >= MAX_MSG_LEN) ? MAX_MSG_LEN : msg_len;
+  if (msg_len > MAX_MSG_LEN) {
+    msg_len = MAX_MSG_LEN;
+  }
+
+  // Populate log event
+  log_event_t log_event = {0};
   memcpy(log_event.msg, msg, msg_len);
   log_event.level = level;
+
+  // Enqueue the message to be logged
   xSemaphoreTake(msg_lock, portMAX_DELAY);
   xMessageBufferSend(msg_stream_handle, &log_event, sizeof(log_event_t), portMAX_DELAY);
   xSemaphoreGive(msg_lock);
