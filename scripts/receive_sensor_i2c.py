@@ -7,19 +7,20 @@ ADDR = 0x69
 
 
 def main():
+    read_bytes = list()
     while True:
-        time.sleep(1)
+        time.sleep(0.2)
         
         # Try to read sensor measurements
         msg_len = 0
         try:
-            msg = bus.read_byte_data(ADDR, 0)
-            msg_len = int(msg);
+            msg = bus.read_byte_data(ADDR, 0x00)
+            msg_len = int(msg)
         except:
             continue
             
         # check if there bytes to read
-        if msg_len < 1:
+        if (msg_len < 1) or (msg_len > 100):
             continue
         
         # Read sensor measurements
