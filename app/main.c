@@ -219,9 +219,10 @@ int main()
 
     // Initialize stdio
     stdio_usb_init();
-    while(!stdio_usb_connected()){};
+
+    // log device info an intialize logging task
     log_device_info();
-    log_init();
+    log_task_init();
 
     // Initialize secondary i2c interface
     gpio_init(I2C_RPI_SDA_PIN);

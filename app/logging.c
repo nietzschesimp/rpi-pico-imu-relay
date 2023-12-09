@@ -60,7 +60,7 @@ void log_task(void* unused)
   }
 }
 
-inline void log_init()
+void log_task_init()
 {
   if(xTaskGetSchedulerState() != taskSCHEDULER_NOT_STARTED) {
     printf("[FATAL] Scheduler has already started!\n");
@@ -90,7 +90,7 @@ inline void log_init()
   xSemaphoreGive(msg_lock);
 }
 
-void log_enqueue(unsigned char level, const char* msg)
+void log_task_enqueue(unsigned char level, const char* msg)
 {
   // Check if logging level is valid
   if ((level < logging_level) || (level >= LOG_LEVEL_MAX)) {
