@@ -28,7 +28,6 @@ enum log_level
 #define LOG_ERROR(...) log_task_enqueue(LOG_LEVEL_ERROR, __FILE__, __LINE__, __VA_ARGS__)
 #define LOG_FATAL(...) log_task_enqueue(LOG_LEVEL_FATAL, __FILE__, __LINE__, __VA_ARGS__)
 
-#define MAX_MSG_LEN 128
 #define MSG_QUEUE_SIZE 4096
 #define LOG_LEVEL LOG_LEVEL_DEBUG
 
