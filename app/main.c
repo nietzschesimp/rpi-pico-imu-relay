@@ -82,6 +82,11 @@ void sensor_task(void* unused_arg)
       // Send data to be encoded
       xQueueSendToBack(sensor_queue, &euler_hrp, portMAX_DELAY);
       LOG_TRACE("Sent data to be encoded");
+      LOG_DEBUG("Sensor Measurment\n"
+                "y: %f\n"
+                "p: %f\n"
+                "r: %f\n",
+                euler_hrp.h, euler_hrp.p, euler_hrp.r);
     }
     else {
       LOG_ERROR("Failed to read sensor data!");
@@ -153,7 +158,7 @@ void rpi_read_task(void* unused_args)
       i2c_write_byte_raw(i2c0, json_measurement.len);
       json_measurement.read_len = true;
       json_measurement.index = 0;
-      LOG_TRACE("Read length");
+      LOG_TRACE("Read length: %d", json_measurement.len);
     }
     // Write bytes from the encoded measurement buffer
     else {
@@ -184,11 +189,13 @@ static void i2c_slave_handler(i2c_inst_t* i2c, i2c_slave_event_t event)
   switch (event) {
     case I2C_SLAVE_RECEIVE:
     {
+      LOG_DEBUG("Controller wants to write data!");
       // Controller wants to write some data
       if (!json_measurement.index_written) {
         // writes always start with the memory address
         json_measurement.index = i2c_read_byte_raw(i2c);
         json_measurement.index_written = true;
+        LOG_DEBUG("Wrote index: %d", json_measurement.index);
       }
       break;
     }
@@ -202,6 +209,7 @@ static void i2c_slave_handler(i2c_inst_t* i2c, i2c_slave_event_t event)
     {
       // Controller wants to close a transaction
       json_measurement.index_written = false;
+      LOG_DEBUG("Controller signalled stop/restart");
       break;
     }
     default:

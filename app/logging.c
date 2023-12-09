@@ -1,10 +1,21 @@
 #include "logging.h"
 
+#define RED   "\x1B[31m"
+#define GRN   "\x1B[32m"
+#define YLW   "\x1B[33m"
+#define BLU   "\x1B[34m"
+#define MAG   "\x1B[35m"
+#define CYN   "\x1B[36m"
+#define WHT   "\x1B[37m"
+#define RESET "\x1B[0m"
 
 typedef struct
 {
   unsigned char level;
-  char msg[MAX_MSG_LEN];
+  const char *file;
+  int line;
+  const char* fmt;
+  va_list args;
 } log_event_t;
 
 
@@ -18,23 +29,40 @@ unsigned char logging_level = LOG_LEVEL;
  * \param level   The logging level of the event
  * \return pointer to string pertaning to the formatting of the given log level
  */
-const char* get_fmt_from_level(unsigned char level)
+const char* get_hdr_fmt_from_level(unsigned char level)
 {
   switch(level)
+  #if LOG_USE_COLOR
   {
     case LOG_LEVEL_DEBUG:
-      return "[DEBUG] %s\n";
+      return WHT "DEBUG" RESET " [%s:%d] | ";
     case LOG_LEVEL_TRACE:
-      return "[TRACE] %s\n";
+      return CYN "TRACE" RESET " [%s:%d] | ";
     case LOG_LEVEL_INFO:
-      return "[INFO] %s\n";
+      return GRN "INFO" RESET "  [%s:%d] | ";
     case LOG_LEVEL_ERROR:
-      return "[ERROR] %s\n";
+      return YLW "ERROR" RESET " [%s:%d] | ";
     case LOG_LEVEL_FATAL:
-      return "[FATAL] %s\n";
+      return RED "FATAL" RESET " [%s:%d] | ";
     default:
       return "";
   }
+  #else
+  {
+    case LOG_LEVEL_DEBUG:
+      return "DEBUG [%s:%d] | ";
+    case LOG_LEVEL_TRACE:
+      return "TRACE [%s:%d] | ";
+    case LOG_LEVEL_INFO:
+      return "INFO  [%s:%d] | ";
+    case LOG_LEVEL_ERROR:
+      return "ERROR [%s:%d] | ";
+    case LOG_LEVEL_FATAL:
+      return "FATAL [%s:%d] | ";
+    default:
+      return "";
+  }
+  #endif
 }
 
 
@@ -45,7 +73,7 @@ void log_task(void* unused)
 {
   log_event_t log_event = {0};
   size_t msg_len = 0;
-  const char* fmt;
+  const char* hdr;
   
   while(1) {
     msg_len = xMessageBufferReceive(msg_stream_handle,
@@ -58,14 +86,11 @@ void log_task(void* unused)
       continue;
     }
     
-    // Get the prefix
-    fmt = get_fmt_from_level(log_event.level);
-    if (strlen(fmt) < 1) {
-      continue;
-    }
-    
-    // Print the info
-    printf(fmt, log_event.msg);
+    hdr = get_hdr_fmt_from_level(log_event.level);
+    printf(hdr, log_event.file, log_event.line);
+    printf(log_event.fmt, log_event.args);
+    printf("\n");
+    va_end(log_event.args);
   }
 }
 
@@ -110,23 +135,23 @@ void log_task_init()
  * \param level   Logging level of the message
  * \param msg     Pointer to the string to log
  */
-void log_task_enqueue(unsigned char level, const char* msg)
+void log_task_enqueue(unsigned char level, const char *file, int line, const char *fmt, ...)
 {
   // Check if logging level is valid
   if ((level < logging_level) || (level >= LOG_LEVEL_MAX)) {
     return;
   }
-  
-  // Check the message length
-  size_t msg_len = strlen(msg);
-  if (msg_len > MAX_MSG_LEN) {
-    msg_len = MAX_MSG_LEN;
-  }
 
   // Populate log event
-  log_event_t log_event = {0};
-  memcpy(log_event.msg, msg, msg_len);
-  log_event.level = level;
+  log_event_t log_event = {
+      .level = level,
+      .file = file,
+      .line = line,
+      .fmt = fmt
+  };
+
+  // Load arguments into log event
+  va_start(log_event.args, fmt);
 
   // Enqueue the message to be logged
   xSemaphoreTake(msg_lock, portMAX_DELAY);
