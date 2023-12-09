@@ -138,7 +138,7 @@ void rpi_read_task(void* unused_args)
 
     if (json_measurement.len <= 0) {
       // Tell RPI no samples are available
-      i2c_write_byte_raw(i2c0, 0);
+      i2c_write_byte_raw(i2c0, 0x00);
       LOG_TRACE("No bytes to read, notifying sensor reader...");
       // Notify sensor read task to take a new measurement
       xTaskNotifyGive(sensor_task_handle);
@@ -155,7 +155,7 @@ void rpi_read_task(void* unused_args)
     // Write bytes from the encoded measurement buffer
     else {
       num_send = i2c_get_write_available(i2c0);
-      if (num_send > json_measurement.len) {
+      if (num_send >= json_measurement.len) {
         num_send = json_measurement.len;
       }
       i2c_write_raw_blocking(i2c0, json_measurement.buffer + json_measurement.index, num_send);
@@ -250,28 +250,28 @@ int main()
                                       "RPI_READ_TASK",
                                       2048,
                                       NULL,
-                                      2,
+                                      9,
                                       &rpi_read_task_handle);
 
     BaseType_t rpi_encode = xTaskCreate(rpi_encode_task,
                                         "RPI_ENCODE_TASK",
                                         2048,
                                         NULL,
-                                        3,
+                                        4,
                                         &rpi_encode_task_handle);
 
     BaseType_t accel_status = xTaskCreate(sensor_task,
                                           "BNO055_READ_TASK",
                                           2048,
                                           NULL,
-                                          4,
+                                          3,
                                           &sensor_task_handle);
 
     BaseType_t pico_status = xTaskCreate(led_task_pico, 
                                          "PICO_LED_TASK",
                                          2048,
                                          NULL,
-                                         5,
+                                         2,
                                          &pico_task_handle);
 
     sensor_queue = xQueueCreate(4, sizeof(struct bno055_euler_double_t));

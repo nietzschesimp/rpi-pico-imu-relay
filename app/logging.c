@@ -78,7 +78,7 @@ void log_task_init()
                                       "LOG_TASK",
                                       1024,
                                       NULL,
-                                      9,
+                                      1,
                                       NULL);
   if(!created_task) {
     printf("[FATAL] Could not initialize message stream!\n");
@@ -100,7 +100,7 @@ void log_task_enqueue(unsigned char level, const char* msg)
   // Enqueue the message to be logged
   log_event_t log_event = {0};
   size_t msg_len = strlen(msg);
-  msg_len = (msg_len > MAX_MSG_LEN) ? MAX_MSG_LEN : msg_len;
+  msg_len = (msg_len >= MAX_MSG_LEN) ? MAX_MSG_LEN : msg_len;
   memcpy(log_event.msg, msg, msg_len);
   log_event.level = level;
   xSemaphoreTake(msg_lock, portMAX_DELAY);
