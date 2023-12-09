@@ -16,6 +16,7 @@
 #define I2C_RPI_SDA_PIN 0
 #define I2C_RPI_SCL_PIN 1
 
+// FreeRTOS task handles
 TaskHandle_t rpi_encode_task_handle = NULL;
 TaskHandle_t rpi_read_task_handle = NULL;
 TaskHandle_t sensor_task_handle = NULL;
