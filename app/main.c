@@ -65,7 +65,6 @@ void sensor_task(void* unused_arg)
   BNO055_RETURN_FUNCTION_TYPE rc;
   struct bno055_euler_double_t euler_hrp = {0.0, 0.0, 0.0};
   LOG_TRACE("Initializing BNO055 sensor configurations");
-  char buf[128] = {0};
 
   // Set the operation to be an IMU
   bno055_set_operation_mode(BNO055_OPERATION_MODE_IMUPLUS);
@@ -77,11 +76,6 @@ void sensor_task(void* unused_arg)
 
     rc = bno055_convert_double_euler_hpr_deg(&euler_hrp);
     if (BNO055_SUCCESS == rc) {
-      printf("Euler data:\n");
-      printf("y: %f\n", euler_hrp.h);   // Print heading (yaw)
-      printf("p: %f\n", euler_hrp.p);   // Print pitch
-      printf("r: %f\n", euler_hrp.r);   // Print roll
-
       // Send data to be encoded
       xQueueSendToBack(sensor_queue, &euler_hrp, portMAX_DELAY);
       LOG_TRACE("Sent data to be encoded");
@@ -161,7 +155,7 @@ void rpi_read_task(void* unused_args)
       i2c_write_raw_blocking(i2c0, json_measurement.buffer + json_measurement.index, num_send);
       json_measurement.index += num_send;
       json_measurement.len -= num_send;
-      printf("Sent %d bytes to RPI\n", num_send);
+      //printf("Sent %d bytes to RPI\n", num_send);
     }
   }
 }
@@ -175,7 +169,7 @@ static void i2c_slave_handler(i2c_inst_t *i2c, i2c_slave_event_t event)
         // writes always start with the memory address
         json_measurement.index = i2c_read_byte_raw(i2c);
         json_measurement.index_written = true;
-        printf("Set index: %d\n", json_measurement.index);
+        //printf("Set index: %d\n", json_measurement.index);
       }
       break;
     case I2C_SLAVE_REQUEST: // master is requesting data
