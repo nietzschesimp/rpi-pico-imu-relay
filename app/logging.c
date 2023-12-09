@@ -13,6 +13,11 @@ SemaphoreHandle_t msg_lock = NULL;
 unsigned char logging_level = LOG_LEVEL;
 
 
+/**
+ * \brief Helper function to grab a string depending on the event logging level
+ * \param level   The logging level of the event
+ * \return pointer to string pertaning to the formatting of the given log level
+ */
 const char* get_fmt_from_level(unsigned char level)
 {
   switch(level)
@@ -32,6 +37,10 @@ const char* get_fmt_from_level(unsigned char level)
   }
 }
 
+
+/**
+ * \brief FreeRTOS task that will receive logging events, format them, and print them appropriately
+ */
 void log_task(void* unused)
 {
   log_event_t log_event = {0};
@@ -60,6 +69,11 @@ void log_task(void* unused)
   }
 }
 
+
+/**
+ * \brief Entry point to initialize the FreeRTOS task that will listen to
+ *        logging events from other tasks to log to console.
+ */
 void log_task_init()
 {
   if(xTaskGetSchedulerState() != taskSCHEDULER_NOT_STARTED) {
@@ -90,6 +104,12 @@ void log_task_init()
   xSemaphoreGive(msg_lock);
 }
 
+
+/**
+ * \brief Function to enqueue a message to be logged later.
+ * \param level   Logging level of the message
+ * \param msg     Pointer to the string to log
+ */
 void log_task_enqueue(unsigned char level, const char* msg)
 {
   // Check if logging level is valid

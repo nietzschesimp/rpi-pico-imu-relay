@@ -21,12 +21,11 @@ TaskHandle_t rpi_read_task_handle = NULL;
 TaskHandle_t sensor_task_handle = NULL;
 TaskHandle_t pico_task_handle = NULL;
 
-// Sensor struct
+// Sensor structs
+volatile QueueHandle_t sensor_queue = NULL;
 struct bno055_t sensor_handle;
 
-// I2C interface mutex
-volatile QueueHandle_t sensor_queue = NULL;
-
+// Struct to store the context of data between RPI and our app
 static struct {
   char len;
   bool read_len;
@@ -37,7 +36,7 @@ static struct {
 
 
 /**
- * @brief Repeatedly flash the Pico's built-in LED.
+ * \brief Repeatedly flash the Pico's built-in LED.
  */
 void led_task_pico(void* unused_arg)
 {
@@ -60,6 +59,9 @@ void led_task_pico(void* unused_arg)
 }
 
 
+/**
+ * \brief FreeRTOS task that will read data from the BNO055 sensor and send it to a queue.
+ */
 void sensor_task(void* unused_arg)
 {
   BNO055_RETURN_FUNCTION_TYPE rc;
@@ -87,6 +89,9 @@ void sensor_task(void* unused_arg)
 }
 
 
+/**
+ * \brief FreeRTOS task that will read a sensor measurement and encode it to send to the RPI.
+ */
 void rpi_encode_task(void* unused_arg)
 {
   struct bno055_euler_double_t msg = {0};
@@ -123,6 +128,9 @@ void rpi_encode_task(void* unused_arg)
 }
 
 
+/**
+ * \brief Task that gets executed when RPI wants to read a measurement.
+ */
 void rpi_read_task(void* unused_args)
 {
   size_t available, num_send;
@@ -148,42 +156,56 @@ void rpi_read_task(void* unused_args)
     }
     // Write bytes from the encoded measurement buffer
     else {
+      // Get maximum number of bytes we can send to RPI
       num_send = i2c_get_write_available(i2c0);
       if (num_send >= json_measurement.len) {
         num_send = json_measurement.len;
       }
+
+      // Send the number of bytes neccessary to the RPI
       i2c_write_raw_blocking(i2c0, json_measurement.buffer + json_measurement.index, num_send);
+
+      // Increase internal counters
       json_measurement.index += num_send;
       json_measurement.len -= num_send;
-      //printf("Sent %d bytes to RPI\n", num_send);
     }
   }
 }
 
 
-static void i2c_slave_handler(i2c_inst_t *i2c, i2c_slave_event_t event)
+/**
+ * \brief Callback function that gets executed when I2C controller requests to read or write data.
+ * \param i2c   Pointer to i2c interface
+ * \param event Enumeration denoting the type of event the controller is requesting.
+ */
+static void i2c_slave_handler(i2c_inst_t* i2c, i2c_slave_event_t event)
 {
   switch (event) {
-    case I2C_SLAVE_RECEIVE: // master has written some data
+    case I2C_SLAVE_RECEIVE:
+    {
+      // Controller wants to write some data
       if (!json_measurement.index_written) {
         // writes always start with the memory address
         json_measurement.index = i2c_read_byte_raw(i2c);
         json_measurement.index_written = true;
-        //printf("Set index: %d\n", json_measurement.index);
       }
       break;
-    case I2C_SLAVE_REQUEST: // master is requesting data
+    }
+    case I2C_SLAVE_REQUEST:
     {
+      // Controller is requesting data, notify read task
       xTaskNotifyGive(rpi_read_task_handle);
       break;
     }
     case I2C_SLAVE_FINISH: // master has signalled Stop / Restart
     {
+      // Controller wants to close a transaction
       json_measurement.index_written = false;
       break;
     }
     default:
     {
+      // Case should never happen, putting it here for completeness
       LOG_ERROR("Got unexpected event from i2c interface!");
       break;
     }
@@ -191,7 +213,7 @@ static void i2c_slave_handler(i2c_inst_t *i2c, i2c_slave_event_t event)
 }
 
 /**
- * @brief Show basic device info.
+ * \brief Show basic device info.
  */
 void log_device_info(void)
 {
@@ -199,8 +221,8 @@ void log_device_info(void)
 }
 
 
-/*
- * RUNTIME START
+/**
+ * \brief Entry point of the FreeRTOS application.
  */
 int main()
 {
@@ -209,16 +231,15 @@ int main()
     if (!rc) {
       goto FAIL_INIT;
     }
-    //setup_default_uart();
 
     // Initialize stdio
     stdio_usb_init();
 
-    // log device info an intialize logging task
+    // log device info and intialize logging task
     log_device_info();
     log_task_init();
 
-    // Initialize secondary i2c interface
+    // Initialize secondary i2c interface as a target
     gpio_init(I2C_RPI_SDA_PIN);
     gpio_set_function(I2C_RPI_SDA_PIN, GPIO_FUNC_I2C);
     gpio_pull_up(I2C_RPI_SDA_PIN);
@@ -227,7 +248,7 @@ int main()
     gpio_pull_up(I2C_RPI_SCL_PIN);
     i2c_slave_init(i2c0, I2C_TARGET_ADDR, &i2c_slave_handler);
 
-    // Initialize sensor
+    // Initialize BNO055 sensor
     bno055_sensor_init(&sensor_handle, BNO055_I2C_ADDR1);
     s8 sensor_rc = bno055_init(&sensor_handle);
     if (sensor_rc != 0) {
@@ -240,6 +261,7 @@ int main()
       goto FAIL_INIT;
     }
     
+    // Create the FreeRTOS task to handle read requests from RPI
     BaseType_t rpi_read = xTaskCreate(rpi_read_task,
                                       "RPI_READ_TASK",
                                       2048,
@@ -247,6 +269,7 @@ int main()
                                       9,
                                       &rpi_read_task_handle);
 
+    // Create the FreeRTOS task to handle the encoding of sensor messages to RPI
     BaseType_t rpi_encode = xTaskCreate(rpi_encode_task,
                                         "RPI_ENCODE_TASK",
                                         2048,
@@ -254,13 +277,15 @@ int main()
                                         4,
                                         &rpi_encode_task_handle);
 
-    BaseType_t accel_status = xTaskCreate(sensor_task,
+    //Create the FreeRTOS task to handle interfacing with the sensor
+    BaseType_t sensor_status = xTaskCreate(sensor_task,
                                           "BNO055_READ_TASK",
                                           2048,
                                           NULL,
                                           3,
                                           &sensor_task_handle);
 
+    // Create the FreeRTOS task to flash the internal LED, for visual verification
     BaseType_t pico_status = xTaskCreate(led_task_pico, 
                                          "PICO_LED_TASK",
                                          2048,
@@ -268,12 +293,12 @@ int main()
                                          2,
                                          &pico_task_handle);
 
+    // Create queue to pass sensor measurements
     sensor_queue = xQueueCreate(4, sizeof(struct bno055_euler_double_t));
 
     // Start the FreeRTOS scheduler
-    // FROM 1.0.1: Only proceed with valid tasks
     if (pico_status == pdPASS ||
-        accel_status == pdPASS ||
+        sensor_status == pdPASS ||
         rpi_encode == pdPASS ||
         rpi_read == pdPASS)
     {
