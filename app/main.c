@@ -29,7 +29,6 @@ struct bno055_t sensor_handle;
 
 // Struct to store the context of data between RPI and our app
 static struct {
-  bool ready;
   bool read_len;
   unsigned char len;
   unsigned char index;
