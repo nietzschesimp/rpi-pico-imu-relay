@@ -157,40 +157,13 @@ void log_task_enqueue(unsigned char level, const char* file, int line, const cha
   va_end(local_args);
 
   // Enqueue the message to be logged
+  BaseType_t is_interrupt = xPortIsInsideInterrupt();
   xSemaphoreTake(msg_lock, portMAX_DELAY);
-  xMessageBufferSend(msg_stream_handle, &log_event, sizeof(log_event_t), portMAX_DELAY);
-  xSemaphoreGive(msg_lock);
-}
-
-
-/**
- * \brief Function to enqueue a message to be logged later from an ISR.
- * \param level   Logging level of the message
- * \param msg     Pointer to the string to log
- */
-void log_task_enqueue_isr(unsigned char level, const char* file, int line, const char* fmt, ...)
-{
-  // Check if logging level is valid
-  if ((level < logging_level) || (level >= LOG_LEVEL_MAX)) {
-    return;
+  if(!is_interrupt) {
+    xMessageBufferSend(msg_stream_handle, &log_event, sizeof(log_event_t), portMAX_DELAY);
   }
-
-  // Populate log event
-  log_event_t log_event = {
-      .level = level,
-      .file = file,
-      .line = line,
-      .fmt = fmt
-  };
-
-  // Load arguments into log event
-  va_list local_args;
-  va_start(local_args, fmt);
-  va_copy(log_event.args, local_args);
-  va_end(local_args);
-
-  // Enqueue the message to be logged
-  xSemaphoreTake(msg_lock, portMAX_DELAY);
-  xMessageBufferSendFromISR(msg_stream_handle, &log_event, sizeof(log_event_t), NULL);
+  else {
+    xMessageBufferSendFromISR(msg_stream_handle, &log_event, sizeof(log_event_t), NULL);
+  }
   xSemaphoreGive(msg_lock);
 }

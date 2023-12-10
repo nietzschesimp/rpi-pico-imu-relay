@@ -201,13 +201,13 @@ static void i2c_slave_handler(i2c_inst_t* i2c, i2c_slave_event_t event)
   switch (event) {
     case I2C_SLAVE_RECEIVE:
     {
-      LOG_DEBUG_ISR("Controller wants to write data!");
+      LOG_DEBUG("Controller wants to write data!");
       size_t available = i2c_get_read_available(i2c);
       if (available == 0) {
-        LOG_DEBUG_ISR("No bytes available to read!");
+        LOG_DEBUG("No bytes available to read!");
         return;
       }
-      LOG_DEBUG_ISR("Read miscellaneous: %X", i2c_read_byte_raw(i2c));
+      LOG_DEBUG("Read miscellaneous: %X", i2c_read_byte_raw(i2c));
       break;
     }
     case I2C_SLAVE_REQUEST:
@@ -222,13 +222,13 @@ static void i2c_slave_handler(i2c_inst_t* i2c, i2c_slave_event_t event)
     }
     case I2C_SLAVE_FINISH: // master has signalled Stop / Restart
     {
-      LOG_DEBUG_ISR("Controller signalled stop/restart");
+      LOG_DEBUG("Controller signalled stop/restart");
       break;
     }
     default:
     {
       // Case should never happen, putting it here for completeness
-      LOG_ERROR_ISR("Got unexpected event from i2c interface!");
+      LOG_ERROR("Got unexpected event from i2c interface!");
       break;
     }
   }
