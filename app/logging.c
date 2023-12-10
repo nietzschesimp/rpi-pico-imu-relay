@@ -15,8 +15,7 @@ typedef struct
   unsigned char level;
   const char* file;
   int line;
-  const char* fmt;
-  va_list args;
+  char msg[MSG_SIZE_MAX];
 } log_event_t;
 
 
@@ -89,9 +88,8 @@ void log_task(void* unused)
     
     hdr = get_hdr_fmt_from_level(log_event.level);
     printf(hdr, log_event.file, log_event.line);
-    vprintf(log_event.fmt, log_event.args);
+    printf(log_event.msg);
     printf("\n");
-    va_end(log_event.args);
   }
 }
 
@@ -147,23 +145,25 @@ void log_task_enqueue(unsigned char level, const char* file, int line, const cha
       .level = level,
       .file = file,
       .line = line,
-      .fmt = fmt
+      .msg = {0},
   };
 
   // Load arguments into log event
   va_list local_args;
   va_start(local_args, fmt);
-  va_copy(log_event.args, local_args);
+  vsnprintf(log_event.msg, MSG_SIZE_MAX, fmt, local_args);
   va_end(local_args);
 
   // Enqueue the message to be logged
   BaseType_t is_interrupt = xPortIsInsideInterrupt();
-  xSemaphoreTake(msg_lock, portMAX_DELAY);
   if(!is_interrupt) {
+    xSemaphoreTake(msg_lock, portMAX_DELAY);
     xMessageBufferSend(msg_stream_handle, &log_event, sizeof(log_event_t), portMAX_DELAY);
+    xSemaphoreGive(msg_lock);
   }
   else {
+    xSemaphoreTakeFromISR(msg_lock, NULL);
     xMessageBufferSendFromISR(msg_stream_handle, &log_event, sizeof(log_event_t), NULL);
+    xSemaphoreGiveFromISR(msg_lock, NULL);
   }
-  xSemaphoreGive(msg_lock);
 }

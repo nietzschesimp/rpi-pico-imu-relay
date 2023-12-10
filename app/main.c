@@ -129,7 +129,6 @@ void rpi_encode_task(void* unused_arg)
              msg.h, msg.p, msg.r);
     json_measurement.len = strlen(json_measurement.buffer);
     json_measurement.read_len = false;
-    json_measurement.ready = true;
     LOG_TRACE("Encoded sensor data into JSON to send");
     LOG_DEBUG(json_measurement.buffer);
     LOG_DEBUG("JSON len: %d", json_measurement.len);
@@ -147,7 +146,7 @@ void rpi_read_task(void* unused_args)
     // Wait until notified that RPI wants to read
     ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 
-    if (!json_measurement.ready) {
+    if (json_measurement.len <= 0) {
       // Tell RPI no samples are available
       i2c_write_byte_raw(i2c0, 0x00);
       LOG_TRACE("No bytes to read, notifying sensor reader...");
@@ -166,7 +165,7 @@ void rpi_read_task(void* unused_args)
     }
 
     // Write bytes from the encoded measurement buffer, if available
-    if (json_measurement.len > 0) {
+    else {
       // Get maximum number of bytes we can send to RPI
       num_send = i2c_get_write_available(i2c0);
       if (num_send >= json_measurement.len) {
@@ -179,10 +178,7 @@ void rpi_read_task(void* unused_args)
 
       // Increase internal counters
       json_measurement.index += num_send;
-
-      if (json_measurement.index >= json_measurement.len) {
-        json_measurement.ready = false;
-      }
+      json_measurement.len -= num_send;
 
       LOG_TRACE("Wrote %d bytes to RPI", num_send);
       LOG_DEBUG("(index: %d, len: %d)", json_measurement.index, json_measurement.len);
@@ -201,13 +197,7 @@ static void i2c_slave_handler(i2c_inst_t* i2c, i2c_slave_event_t event)
   switch (event) {
     case I2C_SLAVE_RECEIVE:
     {
-      LOG_DEBUG("Controller wants to write data!");
-      size_t available = i2c_get_read_available(i2c);
-      if (available == 0) {
-        LOG_DEBUG("No bytes available to read!");
-        return;
-      }
-      LOG_DEBUG("Read miscellaneous: %X", i2c_read_byte_raw(i2c));
+      LOG_DEBUG("Read miscellaneous: 0x%X", i2c_read_byte_raw(i2c));
       break;
     }
     case I2C_SLAVE_REQUEST:
