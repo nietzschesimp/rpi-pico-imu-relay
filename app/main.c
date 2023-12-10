@@ -7,6 +7,7 @@
  *
  */
 #include "main.h"
+#include "hardware/i2c.h"
 #include "logging.h"
 #include "pico/stdio.h"
 #include "pico/stdlib.h"
@@ -28,10 +29,10 @@ struct bno055_t sensor_handle;
 
 // Struct to store the context of data between RPI and our app
 static struct {
-  char len;
+  bool ready;
   bool read_len;
-  char index;
-  bool index_written;
+  unsigned char len;
+  unsigned char index;
   char buffer[256];
 } json_measurement;
 
@@ -79,14 +80,14 @@ void sensor_task(void* unused_arg)
 
     rc = bno055_convert_double_euler_hpr_deg(&euler_hrp);
     if (BNO055_SUCCESS == rc) {
+      LOG_DEBUG("Sensor Measurements - "
+                "(y: %0.4f,"
+                "p: %0.4f,"
+                "r: %0.4f)",
+                euler_hrp.h, euler_hrp.p, euler_hrp.r);
       // Send data to be encoded
       xQueueSendToBack(sensor_queue, &euler_hrp, portMAX_DELAY);
       LOG_TRACE("Sent data to be encoded");
-      LOG_DEBUG("Sensor Measurment\n"
-                "y: %f\n"
-                "p: %f\n"
-                "r: %f\n",
-                euler_hrp.h, euler_hrp.p, euler_hrp.r);
     }
     else {
       LOG_ERROR("Failed to read sensor data!");
@@ -128,8 +129,10 @@ void rpi_encode_task(void* unused_arg)
              msg.h, msg.p, msg.r);
     json_measurement.len = strlen(json_measurement.buffer);
     json_measurement.read_len = false;
+    json_measurement.ready = true;
     LOG_TRACE("Encoded sensor data into JSON to send");
     LOG_DEBUG(json_measurement.buffer);
+    LOG_DEBUG("JSON len: %d", json_measurement.len);
   }
 }
 
@@ -139,12 +142,12 @@ void rpi_encode_task(void* unused_arg)
  */
 void rpi_read_task(void* unused_args)
 {
-  size_t available, num_send;
+  size_t num_send;
   while(true) {
     // Wait until notified that RPI wants to read
     ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 
-    if (json_measurement.len <= 0) {
+    if (!json_measurement.ready) {
       // Tell RPI no samples are available
       i2c_write_byte_raw(i2c0, 0x00);
       LOG_TRACE("No bytes to read, notifying sensor reader...");
@@ -158,29 +161,38 @@ void rpi_read_task(void* unused_args)
       i2c_write_byte_raw(i2c0, json_measurement.len);
       json_measurement.read_len = true;
       json_measurement.index = 0;
-      LOG_TRACE("Read length: %d", json_measurement.len);
+      LOG_TRACE("Sent length: %d", json_measurement.len);
+      continue;
     }
-    // Write bytes from the encoded measurement buffer
-    else {
+
+    // Write bytes from the encoded measurement buffer, if available
+    if (json_measurement.len > 0) {
       // Get maximum number of bytes we can send to RPI
       num_send = i2c_get_write_available(i2c0);
       if (num_send >= json_measurement.len) {
+        LOG_DEBUG("available > len: (%d > %d)", num_send, json_measurement.len);
         num_send = json_measurement.len;
       }
 
       // Send the number of bytes neccessary to the RPI
-      i2c_write_raw_blocking(i2c0, json_measurement.buffer + json_measurement.index, num_send);
+      i2c_write_raw_blocking(i2c0, &json_measurement.buffer[json_measurement.index], num_send);
 
       // Increase internal counters
       json_measurement.index += num_send;
-      json_measurement.len -= num_send;
+
+      if (json_measurement.index >= json_measurement.len) {
+        json_measurement.ready = false;
+      }
+
+      LOG_TRACE("Wrote %d bytes to RPI", num_send);
+      LOG_DEBUG("(index: %d, len: %d)", json_measurement.index, json_measurement.len);
     }
   }
 }
 
 
 /**
- * \brief Callback function that gets executed when I2C controller requests to read or write data.
+ * \brief ISR callback function that gets executed when I2C controller requests to read or write data.
  * \param i2c   Pointer to i2c interface
  * \param event Enumeration denoting the type of event the controller is requesting.
  */
@@ -190,25 +202,24 @@ static void i2c_slave_handler(i2c_inst_t* i2c, i2c_slave_event_t event)
     case I2C_SLAVE_RECEIVE:
     {
       LOG_DEBUG("Controller wants to write data!");
-      // Controller wants to write some data
-      if (!json_measurement.index_written) {
-        // writes always start with the memory address
-        json_measurement.index = i2c_read_byte_raw(i2c);
-        json_measurement.index_written = true;
-        LOG_DEBUG("Wrote index: %d", json_measurement.index);
+      size_t available = i2c_get_read_available(i2c);
+      if (available == 0) {
+        LOG_DEBUG("No bytes available to read!");
+        return;
       }
+      LOG_DEBUG("Read miscellaneous: %X", i2c_read_byte_raw(i2c));
       break;
     }
     case I2C_SLAVE_REQUEST:
     {
       // Controller is requesting data, notify read task
-      xTaskNotifyGive(rpi_read_task_handle);
+      BaseType_t higher_priority_task_woken;
+      vTaskNotifyGiveFromISR(rpi_read_task_handle, &higher_priority_task_woken);
+      portYIELD_FROM_ISR(higher_priority_task_woken);
       break;
     }
     case I2C_SLAVE_FINISH: // master has signalled Stop / Restart
     {
-      // Controller wants to close a transaction
-      json_measurement.index_written = false;
       LOG_DEBUG("Controller signalled stop/restart");
       break;
     }
@@ -227,7 +238,7 @@ static void i2c_slave_handler(i2c_inst_t* i2c, i2c_slave_event_t event)
  */
 void log_device_info(void)
 {
-  printf("App: %s %s (%i)\n", APP_NAME, APP_VERSION, BUILD_NUM);
+  LOG_INFO("App: %s %s (%i)", APP_NAME, APP_VERSION, BUILD_NUM);
 }
 
 
@@ -246,8 +257,8 @@ int main()
     stdio_usb_init();
 
     // log device info and intialize logging task
-    log_device_info();
     log_task_init();
+    log_device_info();
 
     // Initialize secondary i2c interface as a target
     gpio_init(I2C_RPI_SDA_PIN);
@@ -276,7 +287,7 @@ int main()
                                       "RPI_READ_TASK",
                                       2048,
                                       NULL,
-                                      9,
+                                      5,
                                       &rpi_read_task_handle);
 
     // Create the FreeRTOS task to handle the encoding of sensor messages to RPI
@@ -284,7 +295,7 @@ int main()
                                         "RPI_ENCODE_TASK",
                                         2048,
                                         NULL,
-                                        4,
+                                        3,
                                         &rpi_encode_task_handle);
 
     //Create the FreeRTOS task to handle interfacing with the sensor
@@ -292,7 +303,7 @@ int main()
                                           "BNO055_READ_TASK",
                                           2048,
                                           NULL,
-                                          3,
+                                          4,
                                           &sensor_task_handle);
 
     // Create the FreeRTOS task to flash the internal LED, for visual verification

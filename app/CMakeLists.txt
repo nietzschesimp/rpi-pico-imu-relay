@@ -10,9 +10,9 @@ add_compile_definitions(BUILD_NUM=${BUILD_NUM})
 
 # Include app source code file(s)
 add_executable(${APP_NAME}
-    ${CMAKE_CURRENT_SOURCE_DIR}/bno055_driver_interface.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/logging.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/main.c
+    bno055_driver_interface.c
+    logging.c
+    main.c
 )
 
 # Link to built libraries

@@ -22,14 +22,17 @@ enum log_level
   LOG_LEVEL_MAX,
 };
 
-#define LOG_DEBUG(...) log_task_enqueue(LOG_LEVEL_DEBUG, __FILE__, __LINE__, __VA_ARGS__)
-#define LOG_TRACE(...) log_task_enqueue(LOG_LEVEL_TRACE, __FILE__, __LINE__, __VA_ARGS__)
-#define LOG_INFO(...) log_task_enqueue(LOG_LEVEL_INFO, __FILE__, __LINE__, __VA_ARGS__)
-#define LOG_ERROR(...) log_task_enqueue(LOG_LEVEL_ERROR, __FILE__, __LINE__, __VA_ARGS__)
-#define LOG_FATAL(...) log_task_enqueue(LOG_LEVEL_FATAL, __FILE__, __LINE__, __VA_ARGS__)
+#define __FILENAME__ (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
 
-#define MSG_QUEUE_SIZE 4096
+#define LOG_DEBUG(...) log_task_enqueue(LOG_LEVEL_DEBUG, __FILENAME__, __LINE__, __VA_ARGS__)
+#define LOG_TRACE(...) log_task_enqueue(LOG_LEVEL_TRACE, __FILENAME__, __LINE__, __VA_ARGS__)
+#define LOG_INFO(...) log_task_enqueue(LOG_LEVEL_INFO, __FILENAME__, __LINE__, __VA_ARGS__)
+#define LOG_ERROR(...) log_task_enqueue(LOG_LEVEL_ERROR, __FILENAME__, __LINE__, __VA_ARGS__)
+#define LOG_FATAL(...) log_task_enqueue(LOG_LEVEL_FATAL, __FILENAME__, __LINE__, __VA_ARGS__)
+
+#define MSG_QUEUE_SIZE 1024
 #define LOG_LEVEL LOG_LEVEL_DEBUG
+#define LOG_USE_COLOR 1
 
 void log_task_init();
 

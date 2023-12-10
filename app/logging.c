@@ -1,4 +1,5 @@
 #include "logging.h"
+#include <stdarg.h>
 
 #define RED   "\x1B[31m"
 #define GRN   "\x1B[32m"
@@ -12,7 +13,7 @@
 typedef struct
 {
   unsigned char level;
-  const char *file;
+  const char* file;
   int line;
   const char* fmt;
   va_list args;
@@ -35,9 +36,9 @@ const char* get_hdr_fmt_from_level(unsigned char level)
   #if LOG_USE_COLOR
   {
     case LOG_LEVEL_DEBUG:
-      return WHT "DEBUG" RESET " [%s:%d] | ";
+      return CYN "DEBUG" RESET " [%s:%d] | ";
     case LOG_LEVEL_TRACE:
-      return CYN "TRACE" RESET " [%s:%d] | ";
+      return MAG "TRACE" RESET " [%s:%d] | ";
     case LOG_LEVEL_INFO:
       return GRN "INFO" RESET "  [%s:%d] | ";
     case LOG_LEVEL_ERROR:
@@ -88,7 +89,7 @@ void log_task(void* unused)
     
     hdr = get_hdr_fmt_from_level(log_event.level);
     printf(hdr, log_event.file, log_event.line);
-    printf(log_event.fmt, log_event.args);
+    vprintf(log_event.fmt, log_event.args);
     printf("\n");
     va_end(log_event.args);
   }
@@ -102,12 +103,12 @@ void log_task(void* unused)
 void log_task_init()
 {
   if(xTaskGetSchedulerState() != taskSCHEDULER_NOT_STARTED) {
-    printf("[FATAL] Scheduler has already started!\n");
+    printf("Scheduler has already started!\n");
   }
   
   msg_stream_handle = xMessageBufferCreate(MSG_QUEUE_SIZE);
   if(msg_stream_handle == NULL) {
-    printf("[FATAL] Could not initialize message stream!\n");
+    printf("Could not initialize message stream!\n");
     return;
   }
   
@@ -120,12 +121,11 @@ void log_task_init()
                                       1,
                                       NULL);
   if(!created_task) {
-    printf("[FATAL] Could not initialize message stream!\n");
+    printf("Could not initialize message stream!\n");
     vMessageBufferDelete(msg_stream_handle);
     vSemaphoreDelete(msg_lock);
     return;
   }
-  printf("[INFO] Initialized logging!\n");
   xSemaphoreGive(msg_lock);
 }
 
@@ -135,7 +135,7 @@ void log_task_init()
  * \param level   Logging level of the message
  * \param msg     Pointer to the string to log
  */
-void log_task_enqueue(unsigned char level, const char *file, int line, const char *fmt, ...)
+void log_task_enqueue(unsigned char level, const char* file, int line, const char* fmt, ...)
 {
   // Check if logging level is valid
   if ((level < logging_level) || (level >= LOG_LEVEL_MAX)) {
@@ -151,7 +151,10 @@ void log_task_enqueue(unsigned char level, const char *file, int line, const cha
   };
 
   // Load arguments into log event
-  va_start(log_event.args, fmt);
+  va_list local_args;
+  va_start(local_args, fmt);
+  va_copy(log_event.args, local_args);
+  va_end(local_args);
 
   // Enqueue the message to be logged
   xSemaphoreTake(msg_lock, portMAX_DELAY);
