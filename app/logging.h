@@ -24,11 +24,17 @@ enum log_level
 
 #define __FILENAME__ (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
 
-#define LOG_DEBUG(...) log_task_enqueue(LOG_LEVEL_DEBUG, __FILENAME__, __LINE__, __VA_ARGS__)
-#define LOG_TRACE(...) log_task_enqueue(LOG_LEVEL_TRACE, __FILENAME__, __LINE__, __VA_ARGS__)
-#define LOG_INFO(...) log_task_enqueue(LOG_LEVEL_INFO, __FILENAME__, __LINE__, __VA_ARGS__)
-#define LOG_ERROR(...) log_task_enqueue(LOG_LEVEL_ERROR, __FILENAME__, __LINE__, __VA_ARGS__)
-#define LOG_FATAL(...) log_task_enqueue(LOG_LEVEL_FATAL, __FILENAME__, __LINE__, __VA_ARGS__)
+#define LOG_DEBUG(...) log_task_enqueue(LOG_LEVEL_DEBUG, __FUNCTION__, __LINE__, __VA_ARGS__)
+#define LOG_TRACE(...) log_task_enqueue(LOG_LEVEL_TRACE, __FUNCTION__, __LINE__, __VA_ARGS__)
+#define LOG_INFO(...) log_task_enqueue(LOG_LEVEL_INFO, __FUNCTION__, __LINE__, __VA_ARGS__)
+#define LOG_ERROR(...) log_task_enqueue(LOG_LEVEL_ERROR, __FUNCTION__, __LINE__, __VA_ARGS__)
+#define LOG_FATAL(...) log_task_enqueue(LOG_LEVEL_FATAL, __FUNCTION__, __LINE__, __VA_ARGS__)
+
+#define LOG_DEBUG_ISR(...) log_task_enqueue(LOG_LEVEL_DEBUG, __FUNCTION__, __LINE__, __VA_ARGS__)
+#define LOG_TRACE_ISR(...) log_task_enqueue(LOG_LEVEL_TRACE, __FUNCTION__, __LINE__, __VA_ARGS__)
+#define LOG_INFO_ISR(...) log_task_enqueue(LOG_LEVEL_INFO, __FUNCTION__, __LINE__, __VA_ARGS__)
+#define LOG_ERROR_ISR(...) log_task_enqueue(LOG_LEVEL_ERROR, __FUNCTION__, __LINE__, __VA_ARGS__)
+#define LOG_FATAL_ISR(...) log_task_enqueue(LOG_LEVEL_FATAL, __FUNCTION__, __LINE__, __VA_ARGS__)
 
 #define MSG_QUEUE_SIZE 1024
 #define LOG_LEVEL LOG_LEVEL_DEBUG
@@ -37,5 +43,6 @@ enum log_level
 void log_task_init();
 
 void log_task_enqueue(unsigned char level, const char* file, int line, const char* fmt, ...);
+void log_task_enqueue_isr(unsigned char level, const char* file, int line, const char* fmt, ...);
 
 #endif
